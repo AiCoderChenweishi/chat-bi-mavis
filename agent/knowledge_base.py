@@ -9,7 +9,7 @@ import json
 import sqlite3
 import logging
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 logger = logging.getLogger(__name__)
 
