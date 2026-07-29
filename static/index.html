@@ -242,6 +242,66 @@
       left: 0;
       color: #4ade80;
     }
+    .abnormal-list {
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .abnormal-list li {
+      padding: 8px 0 8px 22px;
+      position: relative;
+      line-height: 1.6;
+      font-size: 13.5px;
+      color: #fde68a;
+    }
+    .abnormal-list li::before {
+      content: "⚠";
+      position: absolute;
+      left: 0;
+    }
+    .causes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .cause-item {
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px dashed #2d3748;
+    }
+    .cause-item:last-child { border-bottom: 0; }
+    .cause-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #312e81;
+      color: #c4a5f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .cause-content { display: flex; flex-direction: column; gap: 4px; }
+    .cause-hyp { font-size: 14px; color: #e6e6e6; }
+    .cause-ev {
+      font-size: 12.5px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .badge-ev, .badge-counter {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10.5px;
+      font-weight: 500;
+      margin-right: 6px;
+    }
+    .badge-ev { background: #14532d; color: #86efac; }
+    .badge-counter { background: #7c2d12; color: #fed7aa; }
     .limitation-list li {
       padding: 4px 0 4px 20px;
       position: relative;
@@ -703,6 +763,16 @@ function renderReport(state) {
     `;
   }
 
+  // 2.5 业务背景(BI 段 1)
+  if (c.business_background) {
+    html += `
+      <div class="report-section" style="border-left: 4px solid #60a5fa">
+        <h3 style="color:#93c5fd">📊 业务背景</h3>
+        <div class="summary-text">${esc(c.business_background)}</div>
+      </div>
+    `;
+  }
+
   // 3. 关键发现
   if (c.key_findings && c.key_findings.length) {
     html += `
@@ -711,6 +781,39 @@ function renderReport(state) {
         <ul class="findings-list">
           ${c.key_findings.map(f => `<li>${esc(f)}</li>`).join('')}
         </ul>
+      </div>
+    `;
+  }
+
+  // 3.5 异常信号(BI 段 3)
+  if (c.abnormal_signals && c.abnormal_signals.length) {
+    html += `
+      <div class="report-section" style="border-left: 4px solid #f59e0b">
+        <h3 style="color:#fbbf24">⚠️ 异常信号</h3>
+        <ul class="abnormal-list">
+          ${c.abnormal_signals.map(a => `<li>${esc(a)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 3.6 可能原因(BI 段 4)
+  if (c.possible_causes && c.possible_causes.length) {
+    html += `
+      <div class="report-section" style="border-left: 4px solid #c4a5f7">
+        <h3 style="color:#c4a5f7">🔍 可能原因(芒格式多假设)</h3>
+        <div class="causes-list">
+          ${c.possible_causes.map((p, i) => `
+            <div class="cause-item">
+              <div class="cause-num">${i+1}</div>
+              <div class="cause-content">
+                <div class="cause-hyp"><strong>假设</strong>: ${esc(p.hypothesis || '')}</div>
+                ${p.evidence ? `<div class="cause-ev"><span class="badge-ev">支持</span>${esc(p.evidence)}</div>` : ''}
+                ${p.counter_evidence ? `<div class="cause-ev"><span class="badge-counter">反证</span>${esc(p.counter_evidence)}</div>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
   }

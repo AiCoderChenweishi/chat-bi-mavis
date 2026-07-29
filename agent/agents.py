@@ -624,11 +624,57 @@ ORDER BY gmv DESC;"""
 
 
 class ConclusionWriter:
-    """Agent 04: 结论撰写"""
+    """Agent 04: 结论撰写 — BI 商业洞察版,接入 bi-analyst skill"""
 
     def __init__(self, llm: LLMClient):
         self.llm = llm
         self.system = load_prompt("04_conclusion_writer")
+        # 加载 bi-analyst skill 内容
+        skill_path = os.path.join(os.path.dirname(__file__), "..", ".skills", "bi-analyst-SKILL.md")
+        if not os.path.exists(skill_path):
+            skill_path = os.path.join(os.path.dirname(__file__), "..", "..", ".skills", "bi-analyst", "SKILL.md")
+        self.skill = ""
+        if os.path.exists(skill_path):
+            with open(skill_path) as f:
+                self.skill = f.read()
+        # 业务场景背景知识
+        self.business_contexts = self._load_business_contexts()
+
+    def _load_business_contexts(self) -> Dict:
+        """业务场景背景知识 — mock 数仓有但 agent 不知道的"业务背景"信息"""
+        return {
+            "seasonal": {
+                "618": "6 月 1-18 日,平台级大促月,行业 GMV 普遍涨 30-50%,需要同比看淡季 vs 大促月",
+                "双11": "11 月 11 日,年度最大促,GMV 涨 100%+",
+                "春节": "1-2 月,电商淡季(物流/用户活跃下降),整体 GMV 跌 20-30%",
+                "Q1 淡季": "3-4 月,节后效应,服装/3C 跌幅明显",
+                "Q3 平稳": "7-9 月,相对平稳,无重大促销",
+            },
+            "category_dynamics": {
+                "服饰": "季节性强,Q1 换季/Q2 夏装/Q4 冬装,大促月尤其敏感",
+                "3C数码": "客单价高,新客少但客单高,大促能拉新客",
+                "美妆": "复购率高(月 30-50%),大促囤货,客单提升明显",
+                "食品": "高频低客单,新客驱动,节日(端午/中秋)有品类高峰",
+                "家电": "低频高客单,大促(618/双11)集中购买,Q1-Q3 淡季",
+            },
+            "channel_dynamics": {
+                "APP": "主战场,流量最大,新客老客都有",
+                "H5": "营销落地页,新客为主,转化高但复购弱",
+                "微信小程序": "私域,老客为主,复购率最高",
+                "PC": "3C/家电等大件,客单高但流量下降",
+            },
+            "user_dynamics": {
+                "新客": "拉新预算驱动,1 个月内转化难,需关注 7/30 日留存",
+                "老客": "复购驱动,占 GMV 60-80%,客单稳定但增长空间有限",
+                "高价值用户": "前 10% 用户贡献 40-50% GMV,需要单独运营策略",
+            },
+            "mock_data_disclaimer": [
+                "本数据为 mock 合成(2025-01-01 ~ 2026-07-31),不代表真实业务",
+                "mock 用 uniform 分布生成,真实业务尾部长尾(80/20)更明显",
+                "mock 无大促事件/无竞品数据/无流量来源细分,业务背景靠 agent 经验",
+                "结论仅供参考,真实决策需用线上真实数仓",
+            ],
+        }
 
     def write(self, spec: Dict, sql_result: Dict, chart_path: Optional[str] = None) -> Dict[str, Any]:
         # 摘数据要点
@@ -640,9 +686,14 @@ class ConclusionWriter:
                 "row_count": sql_result.get("row_count", len(rows)),
                 "sample_first_5": rows[:5],
                 "sample_last_3": rows[-3:] if len(rows) > 5 else [],
+                # 算一些基础统计
+                "numeric_stats": self._calc_basic_stats(rows, cols),
             }
         else:
             data_summary = {"empty": True, "error": sql_result.get("error", "no rows")}
+
+        # 决定业务场景背景(根据 spec)
+        relevant_context = self._pick_relevant_context(spec)
 
         user = f"""## 需求
 {json.dumps(spec, ensure_ascii=False, indent=2)}
@@ -653,19 +704,188 @@ class ConclusionWriter:
 ## 图表路径
 {chart_path or '未生成'}
 
-请按 system prompt 输出完整 markdown 报告(JSON schema 严格)。"""
+## 业务场景背景(可能相关)
+{json.dumps(relevant_context, ensure_ascii=False, indent=2)}
+
+## bi-analyst skill 思维框架(必用)
+- 5 段式:业务背景 + 核心数字 + 异常信号 + 可能原因 + 可执行建议
+- 数字精确,不四舍五入
+- 至少 2-3 个可能原因,每个含支持证据 + 反证
+- 每个建议含:动作 + 量化目标 + 责任方 + 时间窗口
+- 必标 mock 数据局限
+
+请按 system prompt 的 JSON schema 输出完整 BI 洞察报告。"""
 
         raw = self.llm.call(self.system, user, json_mode=True, temperature=0.5)
         result = safe_json_loads(raw)
         if not isinstance(result, dict) or "summary" not in result:
-            return {
-                "summary": "数据已计算完成,请查看下表。",
-                "key_findings": ["数据表展示了主要结果"],
-                "business_recommendations": ["结合业务上下文判断下一步"],
-                "data_limitations": ["⚠️ 数据为 mock 生成"],
-                "chart_caption": "图表已生成",
-                "follow_up_questions": ["想看其他维度吗?"]
-            }
+            return self._bi_fallback(sql_result, spec, chart_path)
         if chart_path:
             result["chart_path"] = chart_path
         return result
+
+    def _calc_basic_stats(self, rows, cols):
+        """从数据算基础统计 — 给 LLM 用"""
+        stats = {}
+        for c in cols:
+            vals = [r.get(c) for r in rows if isinstance(r.get(c), (int, float))]
+            if not vals:
+                continue
+            stats[c] = {
+                "max": max(vals),
+                "min": min(vals),
+                "sum": sum(vals),
+                "avg": sum(vals) / len(vals) if vals else 0,
+            }
+        return stats
+
+    def _pick_relevant_context(self, spec):
+        """从 spec 抽出相关的业务背景"""
+        context = {}
+        q = json.dumps(spec, ensure_ascii=False).lower()
+
+        # 类目相关
+        for cat in self.business_contexts["category_dynamics"]:
+            if cat in q:
+                context.setdefault("category", {})[cat] = self.business_contexts["category_dynamics"][cat]
+        # 渠道相关
+        for ch in self.business_contexts["channel_dynamics"]:
+            if ch in q:
+                context.setdefault("channel", {})[ch] = self.business_contexts["channel_dynamics"][ch]
+        # 用户分层相关
+        for u in self.business_contexts["user_dynamics"]:
+            if u in q:
+                context.setdefault("user", {})[u] = self.business_contexts["user_dynamics"][u]
+        # 季节相关(根据时间范围推)
+        tr = spec.get("time_range", {})
+        val = tr.get("value", "") if isinstance(tr, dict) else ""
+        if "30d" in val or "最近 30" in val or "30 天" in val:
+            # 默认加一个一般性背景
+            context.setdefault("seasonal", "当前分析最近 30 天,需考虑 7-8 月通常是电商平稳期(无大促),对比 6 月 618 大促月可能下滑属正常")
+
+        # 必带 mock 局限
+        context["mock_data_disclaimer"] = self.business_contexts["mock_data_disclaimer"]
+        return context
+
+    def _bi_fallback(self, sql_result, spec, chart_path) -> Dict:
+        """5 段式 BI fallback — 当 LLM 不工作或返的格式不对时使用,基于数据生成智能洞察"""
+        rows = sql_result.get("rows", [])
+        cols = sql_result.get("columns", [])
+
+        # 算核心数字
+        if rows and cols:
+            num_cols = [c for c in cols if any(isinstance(r.get(c), (int, float)) for r in rows)]
+            if num_cols:
+                main_col = num_cols[0]
+                vals = [r.get(main_col) for r in rows if isinstance(r.get(main_col), (int, float))]
+                total = sum(vals) if vals else 0
+                avg = total / len(vals) if vals else 0
+                max_row = max(rows, key=lambda r: r.get(main_col) or 0) if rows else {}
+                min_row = min(rows, key=lambda r: r.get(main_col) or 0) if rows else {}
+                # 集中度(Top 1 占比)
+                top1_pct = (max_row.get(main_col, 0) / total * 100) if total > 0 else 0
+                # max/min 倍数
+                ratio = (max_row.get(main_col, 0) / min_row.get(main_col, 1)) if min_row.get(main_col, 0) else 0
+            else:
+                main_col = cols[0] if cols else "value"
+                total = len(rows)
+                avg = 0
+                max_row = rows[0] if rows else {}
+                min_row = rows[-1] if rows else {}
+                top1_pct = 0
+                ratio = 0
+        else:
+            main_col = "value"
+            total = 0
+            avg = 0
+            max_row = {}
+            min_row = {}
+            top1_pct = 0
+            ratio = 0
+
+        metrics_names = [m.get("name", "") for m in (spec or {}).get("metrics", [])]
+        main_metric = metrics_names[0] if metrics_names else main_col
+
+        # 找分类列(非数值的第 1 列)
+        cat_col = None
+        for c in cols:
+            if c not in (num_cols if num_cols else []):
+                cat_col = c
+                break
+
+        max_cat = max_row.get(cat_col, "Top 项") if cat_col else "Top 项"
+        min_cat = min_row.get(cat_col, "底部项") if cat_col else "底部项"
+
+        # ===== 智能判断异常信号 =====
+        abnormal = []
+        if top1_pct > 50:
+            abnormal.append(f"⚠️ {max_cat} 单项占 {top1_pct:.1f}%,超过 50% 阈值,有集中度风险(鸡蛋放一个篮子)")
+        elif top1_pct > 30:
+            abnormal.append(f"⚠️ {max_cat} 占比 {top1_pct:.1f}%,需关注业务是否过度依赖")
+        if ratio > 3 and len(rows) > 2:
+            abnormal.append(f"⚠️ 最大/最小差距 {ratio:.1f} 倍,数据显著不均,长尾贡献度低")
+        if total == 0:
+            abnormal.append("⚠️ 没拿到数据,可能 SQL 过滤条件太严 / 时间窗无数据")
+
+        # 如果差异很小(< 30%),标"基本均匀"
+        if not abnormal:
+            abnormal.append(f"📊 各项 {main_metric} 分布相对均匀(Top 1 占 {top1_pct:.1f}%,最高/最低 {ratio:.2f} 倍),无明显异常")
+
+        # ===== 业务建议 — 智能判断 =====
+        recs = []
+        if top1_pct > 50:
+            recs.append(f"1. 1 个月内(责任人:运营 + 商品)对 {max_cat} 拆 L2 看是否过度集中,考虑扶持次大类分散风险,目标 Top 1 占比降到 40% 以下")
+        elif top1_pct > 30:
+            recs.append(f"1. 2 周内(责任人:运营)评估 {max_cat} 主导地位的可持续性,扶持 2-3 个二级梯队类目,目标 Top 1 占比降至 25% 以下")
+        else:
+            recs.append(f"1. 持续观察各类目表现,当前 {max_cat} 略领先但未到集中度警戒线,保持现有运营节奏")
+
+        if ratio > 3 and len(rows) > 2:
+            recs.append(f"2. 1 个月内(责任人:运营)评估 {min_cat} 投入产出比,如果持续低贡献考虑资源回收,目标整体资源效率提升 10%")
+        else:
+            recs.append(f"2. 关注 {min_cat} 是否有结构性原因(季节性/小众品类),不要盲目砍掉,建议拆月度看趋势")
+
+        recs.append(f"3. 下一步下钻到 L2 类目 + 时间序列,看 {max_cat} 的领先是结构性还是偶发性")
+
+        return {
+            "summary": f"📊 {main_metric} 总量 {total:,.0f}(基于 {len(rows)} 行数据)。{max_cat} 最高 {max_row.get(main_col, 0):,.0f}(占 {top1_pct:.1f}%),{min_cat} 最低 {min_row.get(main_col, 0):,.0f}。{abnormal[0]}",
+            "business_background": f"最近 30 天是电商平稳期(7-8 月无 618/双11 大促月),整体行业 GMV 通常比 6 月/11 月低 20-30%。本次数据为 mock 合成,不代表真实业务;真实业务需用线上数仓验证。",
+            "key_findings": [
+                f"📊 {main_metric} 合计 {total:,.2f},平均每 {cat_col or '项'} {avg:,.2f}",
+                f"🔝 最高 {max_cat}: {max_row.get(main_col, 0):,.2f}(占 {top1_pct:.1f}%)",
+                f"🔻 最低 {min_cat}: {min_row.get(main_col, 0):,.2f}(占 {(min_row.get(main_col, 0) / total * 100) if total else 0:.1f}%)",
+            ],
+            "abnormal_signals": abnormal,
+            "possible_causes": [
+                {
+                    "hypothesis": "假设 1:季节性 / 大促周期影响",
+                    "evidence": "30 天如果是 7-8 月,行业通常处于平稳期(无 618/双11 那种大促月),整体 GMV 比大促月低 20-30% 属正常",
+                    "counter_evidence": "数据为 mock,无大促事件标记,无法直接验证"
+                },
+                {
+                    "hypothesis": "假设 2:类目/渠道结构变化",
+                    "evidence": f"不同类目在不同时点表现差异大({max_cat} 略领先),需下钻到 L2 渠道级看是否某个细分品类异动",
+                    "counter_evidence": "mock 数据为均匀分布,真实业务可能尾部分布更明显(80/20),模拟不能体现真实结构"
+                },
+                {
+                    "hypothesis": "假设 3:用户分层变化(新客/老客)",
+                    "evidence": "如果新客/老客比例变化,GMV 组成会变(老客复购驱动 vs 新客拉新驱动),需拆 user_type 维度",
+                    "counter_evidence": "本次未拆 user_type 维度,需进一步下钻"
+                },
+            ],
+            "business_recommendations": recs,
+            "data_limitations": [
+                "⚠️ 数据为 mock 合成(2025-01-01 ~ 2026-07-31),不代表真实业务",
+                "⚠️ mock 用 uniform 分布生成,真实业务尾部分布更明显(80/20 法则)",
+                "⚠️ mock 无大促事件/无竞品数据,业务背景靠 agent 经验,可能不准",
+                "⚠️ 同比/环比基准可能为 NULL(去年同一天无数据),已用 COALESCE 兜底",
+                "⚠️ 行业 benchmark(电商平稳期 GMV 跌 20-30%)为经验值,非权威数据",
+            ],
+            "chart_caption": f"图表展示了 {len(rows)} 个 {cat_col or '维度'} 的 {main_metric} 横向对比,数字已标注在条形末端",
+            "follow_up_questions": [
+                f"想下钻到 {max_cat} 的 L2 子类目看细分吗?",
+                "想看新客/老客拆分吗?",
+                "想对比去年同期(2025 同期)吗?",
+                "想按 channel 渠道再拆一层吗?",
+            ],
+        }
