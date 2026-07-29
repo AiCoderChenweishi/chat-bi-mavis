@@ -342,6 +342,15 @@
       border: 1px solid #2d3748;
     }
 
+    .echart-container {
+      width: 100%;
+      height: 380px;
+      background: #1a1f2e;
+      border-radius: 8px;
+      margin-top: 8px;
+      border: 1px solid #2d3748;
+    }
+
     /* 右下:沟通区 */
     .chat-panel {
       position: absolute;
@@ -614,10 +623,55 @@
     </div>
   </div>
 
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <script>
 let currentSessionId = null;
 let isWaiting = false;
 let pendingSpec = null;  // 等 user 确认的 spec
+let pendingECharts = [];  // 等待渲染的 ECharts 容器列表
+let echartsInstances = {};  // 保留实例防止 GC
+let echartsResizeHandler = null;  // resize handler 引用
+
+// 渲染单个 ECharts 容器
+function renderEChart(containerId, url) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  // 销毁旧实例
+  if (echartsInstances[containerId]) {
+    try { echartsInstances[containerId].dispose(); } catch (e) {}
+    delete echartsInstances[containerId];
+  }
+  el.innerHTML = '';  // 清空 loading 占位
+  el.style.width = '100%';
+  el.style.height = '380px';
+  const inst = echarts.init(el, null, {renderer: 'canvas'});
+  fetch(url)
+    .then(r => r.json())
+    .then(option => {
+      inst.setOption(option, true);
+      echartsInstances[containerId] = inst;
+    })
+    .catch(err => {
+      el.innerHTML = `<div style="color:#ef4444;padding:20px;text-align:center">图表加载失败: ${err.message}</div>`;
+    });
+}
+
+// 渲染所有 pending ECharts
+function flushECharts() {
+  const pending = pendingECharts;
+  pendingECharts = [];
+  pending.forEach(p => renderEChart(p.id, p.url));
+}
+
+// resize handler (防重复绑定)
+if (!window.__echartsResizeBound) {
+  window.__echartsResizeBound = true;
+  window.addEventListener('resize', () => {
+    Object.values(echartsInstances).forEach(inst => {
+      try { inst.resize(); } catch (e) {}
+    });
+  });
+}
 
 function setInput(text) {
   document.getElementById('userInput').value = text;
@@ -849,15 +903,17 @@ function renderReport(state) {
     `;
   }
 
-  // 6. 图表
+  // 6. 图表 — ECharts
   if (chart) {
+    const chartId = `chart_${Math.random().toString(36).slice(2, 10)}`;
     html += `
       <div class="report-section">
         <h3>📈 图表</h3>
-        <img class="chart-img" src="/api/chart/${chart.split('/').pop()}" alt="分析图表">
+        <div id="${chartId}" class="echart-container" data-echart-url="${chart}"></div>
         ${c.chart_caption ? `<p style="color:#94a3b8;font-size:13px;margin:8px 0 0;font-style:italic">${esc(c.chart_caption)}</p>` : ''}
       </div>
     `;
+    pendingECharts.push({id: chartId, url: chart});
   }
 
   // 7. 摘要
@@ -898,6 +954,8 @@ function renderReport(state) {
     html = `<div class="empty-state"><h2>⏳ 等待中</h2><p>说点什么,我来处理</p></div>`;
   }
   main.innerHTML = html;
+  // DOM 更新后,渲染 ECharts
+  flushECharts();
 }
 
 function esc(s) {

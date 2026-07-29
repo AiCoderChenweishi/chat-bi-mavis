@@ -12,7 +12,7 @@ import os
 import json
 from typing import Optional
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -112,10 +112,23 @@ if os.path.exists(STATIC_DIR):
 
 @app.get("/api/chart/{name}")
 def chart_get(name: str):
+    """兼容老路由 — PNG 图表(老格式,fallback)"""
     path = os.path.join(REPORTS_DIR, name)
     if not os.path.exists(path):
         raise HTTPException(404, "chart not found")
     return FileResponse(path, media_type="image/png")
+
+
+@app.get("/api/echart/{session_id}")
+def echart_get(session_id: str):
+    """ECharts option JSON 端点(主路由)"""
+    import json
+    path = os.path.join(REPORTS_DIR, "echarts", f"{session_id}.json")
+    if not os.path.exists(path):
+        raise HTTPException(404, "echart not found")
+    with open(path, encoding="utf-8") as f:
+        option = json.load(f)
+    return JSONResponse(content=option)
 
 
 @app.get("/", response_class=HTMLResponse)

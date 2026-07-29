@@ -16,7 +16,7 @@ from .agents import (
 )
 from .llm_client import LLMClient, safe_json_loads
 from .sql_executor import SQLExecutor
-from .chart_renderer import render as render_chart
+from .chart_renderer import render_echart
 
 
 class WorkflowState:
@@ -198,13 +198,12 @@ class DataAnalystWorkflow:
     def _do_visualize(self, st: WorkflowState):
         metrics_names = [m.get("name", "") for m in (st.spec or {}).get("metrics", [])]
         title = " / ".join(metrics_names) if metrics_names else "数据结果"
-        ts = int(time.time() * 1000)
-        chart_name = f"chart_{st.session_id}_{ts}.png"
         try:
-            st.chart_path = render_chart(st.sql_result, title=title, output_name=chart_name)
+            # ECharts: 返 /api/echart/<session_id> 路径
+            st.chart_path = render_echart(st.sql_result, title=title, session_id=st.session_id)
         except Exception as e:
             st.chart_path = None
-            print(f"[warn] 图表生成失败: {e}")
+            print(f"[warn] ECharts 渲染失败: {e}")
         st.phase = "writing_conclusion"
 
     def _do_conclusion(self, st: WorkflowState):
