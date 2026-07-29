@@ -174,6 +174,19 @@ python3 tests/e2e_test.py          # 真实 LLM
 - [ ] 结论支持导出 PDF/PPT
 - [ ] 用户管理(多租户、session 持久化)
 
+## ⚠️ DEPRECATED — 2026-07-29 v0.3 起迁到 `chat-bi-mavis` 仓库
+
+**`data-analyst-agent` v0.2 已被迁到 [`AiCoderChenweishi/chat-bi-mavis`](https://github.com/AiCoderChenweishi/chat-bi-mavis)**。
+- dev `8.153.192.136:8000` + prod `117.72.40.22:8000` 都已切到 chat-bi-mavis 仓库 (`06774fa v0.2`)
+- 老仓库 (`data-analyst-agent`) 保留作 archive, **不再更新**
+
+**历史**:
+- v0.1: ccf904c V2 BI 报告 + ECharts + 4 agent (反复追问/5 维度口径)
+- v0.2 (本仓库最后版本, `06774fa`): KB 知识库 + RAG 召回 + page_extract 按钮
+- 2026-07-29 之后所有新工作请到 `chat-bi-mavis` 仓库
+
+---
+
 ## 🆕 v0.2 — 知识库 (KB) + RAG 召回 + page_extract 按钮 (2026-07-29)
 
 **新增**:
