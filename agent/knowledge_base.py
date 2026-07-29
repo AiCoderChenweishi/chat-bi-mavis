@@ -358,6 +358,29 @@ class KnowledgeBase:
         with self._connect() as conn:
             return [r[0] for r in conn.execute("SELECT DISTINCT category FROM kb_entries ORDER BY category").fetchall()]
 
+    def rebuild_fts5(self) -> Tuple[int, int]:
+        """
+        v0.4.1: 重建 FTS5 索引 (从 kb_entries 全量塞)
+        治本: 老数据是 v0.3 时期 INSERT, 触发器没建, FTS5 表空 / 索引空
+        """
+        with self._connect() as conn:
+            # 先全删 FTS5 数据
+            conn.execute("DELETE FROM kb_entries_fts")
+            # 从 kb_entries 全量塞
+            conn.execute("""
+                INSERT INTO kb_entries_fts(rowid, title, content, tags, category)
+                SELECT id, title, content, tags, category FROM kb_entries
+            """)
+            # 让 FTS5 optimize
+            try:
+                conn.execute("INSERT INTO kb_entries_fts(kb_entries_fts) VALUES('optimize')")
+            except Exception:
+                pass
+            conn.commit()
+            kb_count = conn.execute("SELECT COUNT(*) FROM kb_entries").fetchone()[0]
+            fts_count = conn.execute("SELECT COUNT(*) FROM kb_entries_fts").fetchone()[0]
+        return kb_count, fts_count
+
 
 # 单例
 _kb_instance: Optional[KnowledgeBase] = None

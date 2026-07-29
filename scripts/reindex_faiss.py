@@ -24,16 +24,20 @@ def main():
         sys.exit(1)
     print(f"  ✓ faiss + bge 都就绪")
 
-    print("\n=== 2. 读 sqlite ===")
+    print("\n=== 2. 重建 FTS5 索引 (治本: 老数据触发器没建过) ===")
     kb_mod = importlib.import_module("agent.knowledge_base")
     kb = kb_mod.get_kb()
+    kb_count, fts_count = kb.rebuild_fts5()
+    print(f"  FTS5 重建: kb={kb_count} / fts={fts_count} {'✓' if kb_count == fts_count else '✗'}")
+
+    print("\n=== 3. 读 sqlite ===")
     entries = kb.list_recent(limit=10000)
     print(f"  sqlite 共 {len(entries)} 条")
     if not entries:
         print("  (空, 没东西可灌)")
         return
 
-    print("\n=== 3. 重建 faiss 索引 (清空 + 全量重灌) ===")
+    print("\n=== 4. 重建 faiss 索引 (清空 + 全量重灌) ===")
     ok, fail = rag_mod.reindex_all([
         {
             "id": e.id, "category": e.category, "title": e.title,
@@ -43,9 +47,10 @@ def main():
         }
         for e in entries
     ])
-    print(f"\n=== 4. 完成 ===")
-    print(f"  灌入: {ok} 成功 / {fail} 失败 / {len(entries)} 总")
+    print(f"\n=== 5. 完成 ===")
+    print(f"  faiss 灌入: {ok} 成功 / {fail} 失败 / {len(entries)} 总")
     print(f"  faiss 索引: {rag_mod.FAISS_INDEX_PATH}")
+    print(f"  stats: {kb.get_stats()}")
     return 0 if fail == 0 else 1
 
 
