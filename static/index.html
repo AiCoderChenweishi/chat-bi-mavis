@@ -1432,14 +1432,14 @@ async function send(overrideText) {
         const d = await r.json();
         if (d.ok) {
           kbShowToast(
-            `✅ 已存入知识库 id=<a href="/api/kb/list" target="_blank">${d.id}</a> · <b>${escapeHtml(d.category)}</b> · ${escapeHtml(d.title)}`,
+            `✅ 已存入知识库 id=<a href="/api/kb/list" target="_blank">${d.id}</a> · <b>${esc(d.category)}</b> · ${esc(d.title)}`,
             true
           );
         } else {
-          kbShowToast(`❌ 存入失败: ${escapeHtml(d.error || 'unknown')}`, false);
+          kbShowToast(`❌ 存入失败: ${esc(d.error || 'unknown')}`, false);
         }
       } catch (e) {
-        kbShowToast(`❌ 网络错误: ${escapeHtml(String(e))}`, false);
+        kbShowToast(`❌ 网络错误: ${esc(String(e))}`, false);
       } finally {
         btns.forEach(b => {
           b.disabled = false;
@@ -1523,6 +1523,15 @@ function switchPane(pane) {
     document.querySelector('.main-pane').style.display = 'none';
     document.getElementById('kbPane').classList.add('show');
     document.getElementById('btn-save-kb').style.display = '';
+    // v0.3.1.2: dispose 所有 echarts 实例, 切到 KB pane 释放资源
+    // 不然 hidden main-pane 里的 echarts 还在跑, 抢资源 + resize 抛错,
+    // 会卡住后续 JS 包括 KB 表格渲染
+    try {
+      Object.values(echartsInstances).forEach(inst => {
+        try { inst.dispose(); } catch (_) {}
+      });
+      echartsInstances = {};
+    } catch (_) {}
     kbLoadAll();
   }
 }
@@ -1560,7 +1569,7 @@ async function kbLoadStats() {
     const sel = document.getElementById('kbCategory');
     const cur = sel.value;
     sel.innerHTML = '<option value="">所有分类</option>' +
-      Object.keys(stats).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)} (${stats[c]})</option>`).join('');
+      Object.keys(stats).map(c => `<option value="${esc(c)}">${esc(c)} (${stats[c]})</option>`).join('');
     if (cur) sel.value = cur;
   } catch (e) {
     console.error('kbLoadStats failed', e);
@@ -1584,7 +1593,7 @@ async function kbLoadAll() {
     kbRender();
     document.getElementById('kbBadge').textContent = d.count || 0;
   } catch (e) {
-    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 加载失败: ${escapeHtml(String(e))}</div>`;
+    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 加载失败: ${esc(String(e))}</div>`;
   }
 }
 
@@ -1601,7 +1610,7 @@ async function kbSearchRun() {
     kbRender();
     document.getElementById('kbBadge').textContent = d.count || 0;
   } catch (e) {
-    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 搜索失败: ${escapeHtml(String(e))}</div>`;
+    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 搜索失败: ${esc(String(e))}</div>`;
   }
 }
 
@@ -1668,12 +1677,12 @@ function kbTableHtml(items) {
   const tagsHtml = (e) => {
     const tags = e.tags || [];
     if (!tags.length) return '<span style="color:#475569;font-size:11px">—</span>';
-    return tags.slice(0, 4).map(t => `<span class="kb-tag">${escapeHtml(t)}</span>`).join('') +
+    return tags.slice(0, 4).map(t => `<span class="kb-tag">${esc(t)}</span>`).join('') +
       (tags.length > 4 ? `<span style="color:#64748b;font-size:10px">+${tags.length - 4}</span>` : '');
   };
   const sourceHtml = (s) => {
     const t = (s || 'manual').replace('page_extract:', '');
-    return `<span title="${escapeHtml(s || '')}">${escapeHtml(t)}</span>`;
+    return `<span title="${esc(s || '')}">${esc(t)}</span>`;
   };
 
   return `
@@ -1694,12 +1703,12 @@ function kbTableHtml(items) {
         ${items.map(e => `
           <tr>
             <td class="col-id">#${e.id}</td>
-            <td class="col-category"><span class="kb-category-badge kb-category-${escapeHtml(e.category || '')}">${escapeHtml(e.category || '未分类')}</span></td>
-            <td class="col-title"><a onclick="kbShowDetail(${e.id})">${escapeHtml(e.title || '(无标题)')}</a></td>
+            <td class="col-category"><span class="kb-category-badge kb-category-${esc(e.category || '')}">${esc(e.category || '未分类')}</span></td>
+            <td class="col-title"><a onclick="kbShowDetail(${e.id})">${esc(e.title || '(无标题)')}</a></td>
             <td class="col-tags">${tagsHtml(e)}</td>
             <td class="col-confidence">${confHtml(e)}</td>
             <td class="col-source">${sourceHtml(e.source)}</td>
-            <td class="col-created">${escapeHtml((e.created_at || '').slice(0, 10))}</td>
+            <td class="col-created">${esc((e.created_at || '').slice(0, 10))}</td>
             <td class="col-action"><button class="kb-del-btn" onclick="kbDelete(${e.id})" title="删除这条 KB">🗑</button></td>
           </tr>
         `).join('')}
@@ -1735,22 +1744,22 @@ async function kbShowDetail(id) {
   const cat = entry.category || '未分类';
   const conf = (entry.confidence != null ? Number(entry.confidence) : 0).toFixed(2);
   const confColor = entry.confidence >= 0.8 ? '#10b981' : (entry.confidence >= 0.5 ? '#f59e0b' : '#ef4444');
-  const tagsHtml = (entry.tags || []).map(t => `<span class="kb-tag">${escapeHtml(t)}</span>`).join('') || '<span style="color:#475569">无标签</span>';
+  const tagsHtml = (entry.tags || []).map(t => `<span class="kb-tag">${esc(t)}</span>`).join('') || '<span style="color:#475569">无标签</span>';
   const html = `
     <div class="kb-modal-mask show" id="kbModal" onclick="if(event.target.id==='kbModal') kbCloseModal()">
       <div class="kb-modal">
         <div class="kb-modal-head">
-          <div class="title">${escapeHtml(entry.title || '(无标题)')}</div>
+          <div class="title">${esc(entry.title || '(无标题)')}</div>
           <button class="kb-modal-close" onclick="kbCloseModal()">×</button>
         </div>
         <div class="kb-modal-meta">
           <span>#${entry.id}</span>
-          <span class="kb-category-badge kb-category-${escapeHtml(cat)}">${escapeHtml(cat)}</span>
+          <span class="kb-category-badge kb-category-${esc(cat)}">${esc(cat)}</span>
           <span class="kb-confidence-bar"><span class="dot" style="background:${confColor}"></span>${conf}</span>
-          <span>📥 ${escapeHtml(entry.source || 'manual')}</span>
-          <span>📅 ${escapeHtml(entry.created_at || '')}</span>
+          <span>📥 ${esc(entry.source || 'manual')}</span>
+          <span>📅 ${esc(entry.created_at || '')}</span>
         </div>
-        <div class="kb-modal-body" style="margin-bottom:10px">${escapeHtml(entry.content || '(无内容)')}</div>
+        <div class="kb-modal-body" style="margin-bottom:10px">${esc(entry.content || '(无内容)')}</div>
         <div style="padding:0 20px 10px;font-size:11px;color:#94a3b8">🏷 ${tagsHtml}</div>
         <div class="kb-modal-foot">
           <button class="kb-del-btn" onclick="kbDelete(${entry.id}); kbCloseModal();" style="padding:5px 12px">🗑 删除</button>
@@ -1788,7 +1797,7 @@ async function kbDelete(id) {
       kbShowToast('❌ 删除失败', false);
     }
   } catch (e) {
-    kbShowToast('❌ 删除失败: ' + escapeHtml(String(e)), false);
+    kbShowToast('❌ 删除失败: ' + esc(String(e)), false);
   }
 }
 
