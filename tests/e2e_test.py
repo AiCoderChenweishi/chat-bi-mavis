@@ -56,16 +56,31 @@ def run_scenario(workflow, scenario):
     print(f"   [澄清后] phase={st.phase} round={st.round}")
     print(f"   [反问消息] {st.assistant_message[:200]}")
 
-    # 如果还在 clarify,模拟用户回答 "默认就行"
-    if st.phase == "clarifying":
-        workflow.step(st.session_id, "默认就行,30 天")
-        print(f"   [回答后] phase={st.phase}")
-        if st.phase == "clarifying":
-            workflow.step(st.session_id, "你看着办,出数据")
-            print(f"   [回答后] phase={st.phase}")
+    # 模拟用户回答:不默认,用关键词回答(因为新规则禁止猜)
+    # 每个场景配一组"显式"回答
+    answers = {
+        "GMV 总体分析": "30 天,品类,GMV 含退单扣减,同比+环比,新客按首单,排除 PC 渠道",
+        "复购率分析": "30 天,新客老客都要看,复购=30 天内下过≥2 单,同比去年,排除测试单",
+        "转化漏斗": "30 天,按渠道,4 步全看,浏览→加购→下单→支付,同比去年,只看 APP",
+        "券 ROI": "30 天,按券类型,ROI=券带动GMV/券面额,同比+环比,新客老客都要看",
+        "用户留存": "30 天,1/7/30 日留存都看,按注册日 cohort,同比去年",
+    }
+    answer = answers.get(scenario["name"], "30 天,品类,GMV 含退单扣减,同比+环比,新客按首单")
 
-    # 跑到底
-    if st.phase not in ("done", "error"):
+    if st.phase == "clarifying":
+        workflow.step(st.session_id, answer)
+        print(f"   [答 1 轮后] phase={st.phase}")
+        if st.phase == "clarifying":
+            workflow.step(st.session_id, "再补:没其他了,按这个")
+            print(f"   [答 2 轮后] phase={st.phase}")
+
+    # 如果到了 awaiting_confirmation,显式确认
+    if st.phase == "awaiting_confirmation":
+        workflow.step(st.session_id, "确认,按这个口径跑")
+        print(f"   [确认后] phase={st.phase}")
+
+    # 如果到 ready 才自动跑
+    if st.phase not in ("done", "error", "clarifying", "awaiting_confirmation"):
         st = workflow.run_through(st.session_id)
 
     # 检

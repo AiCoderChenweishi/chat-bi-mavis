@@ -1,8 +1,8 @@
 """
 Agentic Workflow 编排 — 状态机
 状态:
-  idle → clarifying → ready → warehouse_understanding → sql_generating
-        → executing → visualizing → writing_conclusion → done
+  idle → clarifying → awaiting_confirmation → ready → warehouse_understanding
+        → sql_generating → executing → visualizing → writing_conclusion → done
         ↘ 任何阶段失败 → error → 可重试
 """
 import os
@@ -91,18 +91,20 @@ class DataAnalystWorkflow:
 
     def step(self, session_id: str, user_message: Optional[str] = None) -> WorkflowState:
         """
-        单步推进: 拿当前 session,按 phase 推进
-        user_message: 在 clarifying 阶段需要
+        单步推进
         """
         st = self.sessions.get(session_id)
         if not st:
             raise ValueError(f"session 不存在: {session_id}")
 
         if st.error:
-            return st  # 已失败,不推进
+            return st
 
         if st.phase == "clarifying":
             self._do_clarify(st, user_message or "")
+        elif st.phase == "awaiting_confirmation":
+            # 收到 user 消息,让 clarifier 决定是确认 / 还是改某条
+            self._do_awaiting_confirmation(st, user_message or "")
         elif st.phase == "warehouse_understanding":
             self._do_understand(st)
         elif st.phase == "sql_generating":
@@ -114,7 +116,7 @@ class DataAnalystWorkflow:
         elif st.phase == "writing_conclusion":
             self._do_conclusion(st)
         elif st.phase == "done":
-            pass  # 终态
+            pass
 
         return st
 
@@ -127,14 +129,43 @@ class DataAnalystWorkflow:
         st.llm_calls += 1
         st.round = result.get("round", st.round)
 
-        if result.get("phase") == "ready" and result.get("spec"):
+        phase = result.get("phase")
+        if phase == "ready" and result.get("spec"):
             st.spec = result["spec"]
             st.phase = "warehouse_understanding"
-            st.add_assistant(result.get("reply", "需求已明确,开始理解数仓。"))
+            st.add_assistant(result.get("reply", "口径已确认,开始理解数仓。"))
+        elif phase == "awaiting_confirmation" and result.get("spec"):
+            # 新阶段:等 user 显式确认
+            st.spec = result["spec"]
+            st.phase = "awaiting_confirmation"
+            st.add_assistant(result.get("reply", "请确认口径。"))
         else:
             reply = result.get("reply", "请补充信息")
             st.add_assistant(reply)
-            # 还在 clarifying 阶段
+            # 还在 clarifying
+
+    def _do_awaiting_confirmation(self, st: WorkflowState, user_message: str):
+        """user 看到口径卡,可以确认 / 改某条"""
+        if user_message:
+            st.add_user(user_message)
+        # 再让 clarifier 处理一次:可能是 "确认" → ready,可能是 "改 X" → 回到 clarifying
+        result = self.clarifier.parse(st.history, user_message)
+        st.llm_calls += 1
+        st.round = result.get("round", st.round)
+
+        phase = result.get("phase")
+        if phase == "ready" and result.get("spec"):
+            st.spec = result["spec"]
+            st.phase = "warehouse_understanding"
+            st.add_assistant(result.get("reply", "✅ 确认收到,开始理解数仓。"))
+        elif phase == "awaiting_confirmation" and result.get("spec"):
+            st.spec = result["spec"]
+            st.phase = "awaiting_confirmation"
+            st.add_assistant(result.get("reply", "已更新口径,请再次确认。"))
+        else:
+            # user 改某条 → 回到 clarifying
+            st.phase = "clarifying"
+            st.add_assistant(result.get("reply", "好的,改完再问。"))
 
     def _do_understand(self, st: WorkflowState):
         st.warehouse_plan = self.understander.understand(st.spec)
@@ -148,12 +179,8 @@ class DataAnalystWorkflow:
         st.phase = "executing"
 
     def _do_execute(self, st: WorkflowState):
-        # 如果主 SQL 失败,试 fallback
         result = self.executor.execute(st.sql)
-        st.llm_calls += 0  # SQL 执行不算 LLM
-
         if not result.get("ok"):
-            # 试 fallback
             sql_obj_fb = self.sql_gen.generate(st.spec, st.warehouse_plan)
             st.llm_calls += 1
             fb = sql_obj_fb.get("fallback_sql")
@@ -161,7 +188,6 @@ class DataAnalystWorkflow:
                 result = self.executor.execute(fb)
                 if result.get("ok"):
                     st.sql = f"-- [fallback]\n{fb}"
-
         st.sql_result = result
         if not result.get("ok"):
             st.error = f"SQL 执行失败: {result.get('error')}"
@@ -170,8 +196,7 @@ class DataAnalystWorkflow:
             st.phase = "visualizing"
 
     def _do_visualize(self, st: WorkflowState):
-        # 选标题
-        metrics_names = [m.get("name", "") for m in st.spec.get("metrics", [])] if st.spec else []
+        metrics_names = [m.get("name", "") for m in (st.spec or {}).get("metrics", [])]
         title = " / ".join(metrics_names) if metrics_names else "数据结果"
         ts = int(time.time() * 1000)
         chart_name = f"chart_{st.session_id}_{ts}.png"
@@ -187,13 +212,11 @@ class DataAnalystWorkflow:
         st.llm_calls += 1
         st.phase = "done"
 
-    # ---- 快捷方法 ----
-
     def run_through(self, session_id: str) -> WorkflowState:
-        """一路跑到 done(在 clarify 已 ready 后)"""
+        """一路跑到 done(在 ready 后)"""
         st = self.sessions[session_id]
-        max_steps = 10
-        while st.phase not in ("done", "error") and max_steps > 0:
+        max_steps = 20
+        while st.phase not in ("done", "error", "clarifying", "awaiting_confirmation") and max_steps > 0:
             self.step(session_id)
             max_steps -= 1
         return st

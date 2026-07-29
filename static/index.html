@@ -3,20 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>数据分析 Agent — 多轮对话版</title>
+  <title>数据分析 Agent</title>
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%;
       font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       background: #0f1419;
       color: #e6e6e6;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      overflow: hidden;
+    }
+    body {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      grid-template-rows: 56px 1fr;
+      grid-template-areas:
+        "header header"
+        "left   main";
     }
     header {
-      padding: 16px 24px;
+      grid-area: header;
+      padding: 0 24px;
       background: #1a1f2e;
       border-bottom: 1px solid #2d3748;
       display: flex;
@@ -27,51 +35,329 @@
       margin: 0;
       font-size: 18px;
       font-weight: 600;
-      color: #fff;
     }
-    .header-meta {
-      display: flex;
-      gap: 12px;
-      font-size: 12px;
-      color: #94a3b8;
-    }
+    .header-meta { display: flex; gap: 8px; font-size: 12px; }
     .pill {
-      padding: 3px 10px;
+      padding: 4px 10px;
       border-radius: 999px;
       background: #2d3748;
       font-size: 11px;
     }
     .pill.mock { background: #7c2d12; color: #fed7aa; }
     .pill.live { background: #14532d; color: #bbf7d0; }
-    .main {
-      flex: 1;
+
+    /* 左:SQL 区 */
+    .left-pane {
+      grid-area: left;
+      background: #0a0e14;
+      border-right: 1px solid #2d3748;
       display: flex;
+      flex-direction: column;
       overflow: hidden;
     }
-    .chat-pane {
+    .pane-header {
+      padding: 12px 16px;
+      background: #131822;
+      border-bottom: 1px solid #2d3748;
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .pane-header .copy-btn {
+      background: #2d3748;
+      border: none;
+      color: #cbd5e1;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .pane-header .copy-btn:hover { background: #475569; }
+    .sql-block {
       flex: 1;
+      overflow: auto;
+      padding: 14px 16px;
+      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 12.5px;
+      line-height: 1.55;
+      white-space: pre;
+      color: #e6e6e6;
+    }
+    .sql-block .empty { color: #64748b; font-style: italic; }
+    .sql-block .comment { color: #6b7280; }
+    .sql-block .keyword { color: #c4a5f7; font-weight: 600; }
+    .sql-block .string { color: #86efac; }
+    .sql-block .number { color: #fbbf24; }
+    .left-footer {
+      padding: 10px 16px;
+      background: #131822;
+      border-top: 1px solid #2d3748;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .left-footer .row { display: flex; justify-content: space-between; margin: 2px 0; }
+
+    /* 中:报告主区 */
+    .main-pane {
+      grid-area: main;
       display: flex;
       flex-direction: column;
-      max-width: 720px;
-      margin: 0 auto;
-      width: 100%;
+      overflow: hidden;
+      position: relative;
     }
-    .messages {
+    .main-content {
       flex: 1;
       overflow-y: auto;
-      padding: 24px;
+      padding: 32px 40px 200px 40px;  /* 底部给沟通区留位 */
+    }
+    .empty-state {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #475569;
+      text-align: center;
     }
-    .msg {
-      max-width: 85%;
-      padding: 12px 16px;
-      border-radius: 12px;
+    .empty-state h2 { font-size: 22px; margin: 0 0 12px; color: #64748b; }
+    .empty-state p { font-size: 14px; max-width: 480px; line-height: 1.6; }
+    .examples {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 24px;
+      justify-content: center;
+    }
+    .examples button {
+      padding: 8px 14px;
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .examples button:hover { background: #334155; border-color: #475569; }
+
+    /* 报告区组件 */
+    .report-section {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .report-section h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .report-section .body {
+      font-size: 14px;
+      line-height: 1.7;
+      color: #cbd5e1;
+    }
+    .summary-text {
+      font-size: 16px;
+      line-height: 1.7;
+      color: #e6e6e6;
+    }
+
+    /* 口径确认卡 */
+    .spec-card {
+      background: #1a1f2e;
+      border: 1.5px solid #f59e0b;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .spec-card.confirmed {
+      border-color: #4ade80;
+      background: linear-gradient(135deg, #0f1f15 0%, #1a1f2e 100%);
+    }
+    .spec-card h3 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fbbf24;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .spec-card.confirmed h3 { color: #4ade80; }
+    .spec-grid {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 0;
+    }
+    .spec-grid .row { display: contents; }
+    .spec-grid .k, .spec-grid .v {
+      padding: 8px 0;
+      border-bottom: 1px dashed #2d3748;
+      font-size: 13px;
+    }
+    .spec-grid .k { color: #94a3b8; }
+    .spec-grid .v { color: #e6e6e6; }
+    .spec-card .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #422006;
+      color: #fde68a;
+      font-size: 11px;
+      margin-left: 8px;
+    }
+    .spec-card.confirmed .badge { background: #14532d; color: #bbf7d0; }
+
+    /* 关键发现 / 建议 / 局限 */
+    .findings-list, .recs-list {
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .findings-list li, .recs-list li {
+      padding: 8px 0 8px 18px;
+      position: relative;
       line-height: 1.6;
       font-size: 14px;
-      white-space: pre-wrap;
+    }
+    .findings-list li::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: #60a5fa;
+    }
+    .recs-list li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: #4ade80;
+    }
+    .limitation-list li {
+      padding: 4px 0 4px 20px;
+      position: relative;
+      color: #fbbf24;
+      font-size: 13px;
+    }
+    .limitation-list li::before {
+      content: "⚠";
+      position: absolute;
+      left: 0;
+    }
+
+    /* 数据表 */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      margin-top: 8px;
+    }
+    .data-table th, .data-table td {
+      border: 1px solid #2d3748;
+      padding: 6px 10px;
+      text-align: right;
+    }
+    .data-table th {
+      background: #131822;
+      font-weight: 600;
+      text-align: center;
+      color: #94a3b8;
+    }
+    .data-table td { color: #cbd5e1; }
+    .data-table td:first-child { text-align: left; font-weight: 500; color: #e6e6e6; }
+
+    .chart-img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin-top: 8px;
+      border: 1px solid #2d3748;
+    }
+
+    /* 右下:沟通区 */
+    .chat-panel {
+      position: absolute;
+      right: 24px;
+      bottom: 24px;
+      width: 420px;
+      max-width: calc(100% - 48px);
+      height: 480px;
+      max-height: 70vh;
+      background: #1a1f2e;
+      border: 1px solid #3b82f6;
+      border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .chat-panel.collapsed {
+      height: 56px;
+      width: 200px;
+    }
+    .chat-header {
+      padding: 14px 18px;
+      background: #1e293b;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .chat-header .title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chat-header .title .dot {
+      width: 8px;
+      height: 8px;
+      background: #3b82f6;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .chat-header .toggle {
+      color: #94a3b8;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .chat-panel.collapsed .chat-messages,
+    .chat-panel.collapsed .chat-confirm,
+    .chat-panel.collapsed .chat-input-area { display: none; }
+
+    .msg {
+      max-width: 90%;
+      padding: 9px 13px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.55;
       word-wrap: break-word;
+      white-space: pre-wrap;
     }
     .msg.user {
       align-self: flex-end;
@@ -81,144 +367,114 @@
     }
     .msg.assistant {
       align-self: flex-start;
-      background: #1e293b;
-      border: 1px solid #334155;
+      background: #2d3748;
+      color: #e6e6e6;
+      border: 1px solid #374151;
       border-bottom-left-radius: 2px;
     }
     .msg.system {
       align-self: center;
-      background: #422006;
-      color: #fde68a;
-      font-size: 12px;
-      padding: 6px 12px;
-      max-width: 95%;
+      background: #1a1a1a;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
     }
     .msg.thinking {
       align-self: flex-start;
-      background: #1e293b;
+      background: #2d3748;
       border: 1px dashed #475569;
       font-style: italic;
       color: #94a3b8;
     }
-    .msg .label {
-      font-size: 11px;
-      color: #94a3b8;
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+
+    /* 确认按钮区 */
+    .chat-confirm {
+      padding: 10px 14px;
+      background: #131822;
+      border-top: 1px solid #2d3748;
+      display: none;
     }
-    .msg pre {
-      background: #0f172a;
-      padding: 8px 12px;
-      border-radius: 6px;
-      overflow-x: auto;
+    .chat-confirm.show { display: block; }
+    .chat-confirm .label {
       font-size: 12px;
-      margin: 8px 0;
-    }
-    .msg table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 8px 0;
-      font-size: 12px;
-    }
-    .msg table th, .msg table td {
-      border: 1px solid #334155;
-      padding: 6px 10px;
-      text-align: right;
-    }
-    .msg table th {
-      background: #1e293b;
+      color: #fbbf24;
+      margin-bottom: 6px;
       font-weight: 600;
-      text-align: center;
     }
-    .msg img {
-      max-width: 100%;
-      border-radius: 8px;
-      margin: 8px 0;
+    .chat-confirm .buttons {
+      display: flex;
+      gap: 6px;
     }
-    .input-area {
-      padding: 16px 24px;
-      background: #1a1f2e;
+    .chat-confirm button {
+      flex: 1;
+      padding: 7px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .chat-confirm .btn-ok {
+      background: #16a34a;
+      color: #fff;
+    }
+    .chat-confirm .btn-ok:hover { background: #15803d; }
+    .chat-confirm .btn-edit {
+      background: #475569;
+      color: #fff;
+    }
+    .chat-confirm .btn-edit:hover { background: #64748b; }
+
+    .chat-input-area {
+      padding: 12px 14px;
+      background: #131822;
       border-top: 1px solid #2d3748;
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
-    .input-area input {
+    .chat-input-area input {
       flex: 1;
-      padding: 12px 16px;
+      padding: 8px 12px;
       background: #0f172a;
       color: #e6e6e6;
       border: 1px solid #334155;
-      border-radius: 8px;
-      font-size: 14px;
+      border-radius: 6px;
+      font-size: 13px;
       outline: none;
     }
-    .input-area input:focus {
-      border-color: #3b82f6;
-    }
-    .input-area button {
-      padding: 12px 24px;
+    .chat-input-area input:focus { border-color: #3b82f6; }
+    .chat-input-area button {
+      padding: 8px 14px;
       background: #3b82f6;
       color: #fff;
       border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 500;
-      font-size: 14px;
-    }
-    .input-area button:hover { background: #2563eb; }
-    .input-area button:disabled {
-      background: #475569;
-      cursor: not-allowed;
-    }
-    .examples {
-      padding: 8px 24px;
-      background: #1a1f2e;
-      border-top: 1px solid #2d3748;
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .examples .label {
-      font-size: 12px;
-      color: #94a3b8;
-      margin-right: 4px;
-    }
-    .examples button {
-      padding: 4px 10px;
-      background: #0f172a;
-      color: #cbd5e1;
-      border: 1px solid #334155;
       border-radius: 6px;
       cursor: pointer;
-      font-size: 12px;
+      font-size: 13px;
+      font-weight: 500;
     }
-    .examples button:hover {
-      background: #1e293b;
-      border-color: #475569;
-    }
+    .chat-input-area button:hover { background: #2563eb; }
+    .chat-input-area button:disabled { background: #475569; cursor: not-allowed; }
+
+    /* 阶段指示器 */
     .phase-bar {
-      padding: 6px 24px;
-      background: #0f1419;
-      border-top: 1px solid #2d3748;
-      font-size: 12px;
-      color: #94a3b8;
-      text-align: center;
+      position: absolute;
+      top: 12px;
+      right: 24px;
+      display: flex;
+      gap: 6px;
+      font-size: 10px;
     }
-    .phase-bar .stage {
-      margin: 0 6px;
-      opacity: 0.4;
+    .phase-pill {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #1e293b;
+      color: #475569;
+      border: 1px solid #2d3748;
     }
-    .phase-bar .stage.active {
-      opacity: 1;
-      color: #60a5fa;
-      font-weight: 600;
-    }
-    .phase-bar .stage.done {
-      opacity: 1;
-      color: #4ade80;
-    }
+    .phase-pill.active { background: #1e3a8a; color: #93c5fd; border-color: #3b82f6; }
+    .phase-pill.done { background: #14532d; color: #86efac; border-color: #4ade80; }
   </style>
 </head>
 <body>
@@ -226,44 +482,73 @@
     <h1>📊 数据分析 Agent</h1>
     <div class="header-meta">
       <span class="pill" id="llmPill">LLM: 检测中...</span>
-      <span class="pill mock">⚠️ MOCK 数据演示</span>
+      <span class="pill mock">⚠ MOCK 数据演示</span>
     </div>
   </header>
 
-  <div class="main">
-    <div class="chat-pane">
-      <div class="messages" id="messages">
-        <div class="msg system">
-          <div class="label">系统</div>
-          欢迎使用数据分析 Agent。直接告诉我你想分析什么,例如:
-          "最近 30 天 GMV 怎么样"、"618 复购率掉了帮我看下"、"新客转化漏斗做一下"。
-          <br><br>
-          <strong>当前数仓</strong>:电商 mock 数仓 (DWD 6 张 + DWS 5 张 + ADS 5 张,数据范围 2025-01-01 ~ 2026-07-31)
+  <!-- 左:SQL 区 -->
+  <div class="left-pane">
+    <div class="pane-header">
+      <span>🔧 SQL / 代码</span>
+      <button class="copy-btn" onclick="copySQL()">📋 复制</button>
+    </div>
+    <div class="sql-block" id="sqlBlock">
+<span class="empty">// SQL 还没生成
+// 等需求澄清 + 口径确认后,这里会显示 DuckDB SQL</span>
+    </div>
+    <div class="left-footer">
+      <div class="row"><span>数据范围</span><span>2025-01-01 ~ 2026-07-31</span></div>
+      <div class="row"><span>is_mock</span><span>TRUE(合成数据)</span></div>
+      <div class="row"><span>SQL 方言</span><span>DuckDB 1.5.5</span></div>
+    </div>
+  </div>
+
+  <!-- 中:报告主区 -->
+  <div class="main-pane">
+    <div class="phase-bar" id="phaseBar">
+      <span class="phase-pill" data-stage="clarifying">1.澄清</span>
+      <span class="phase-pill" data-stage="warehouse_understanding">2.数仓</span>
+      <span class="phase-pill" data-stage="sql_generating">3.SQL</span>
+      <span class="phase-pill" data-stage="executing">4.执行</span>
+      <span class="phase-pill" data-stage="visualizing">5.图表</span>
+      <span class="phase-pill" data-stage="writing_conclusion">6.结论</span>
+      <span class="phase-pill" data-stage="done">✓完成</span>
+    </div>
+    <div class="main-content" id="mainContent">
+      <div class="empty-state">
+        <h2>👋 开始一次数据分析</h2>
+        <p>在右下角输入你的需求,我会先多轮跟你确认口径(时间窗口、指标定义、新老客口径、过滤条件),确认后才写 SQL,绝不自己瞎猜。</p>
+        <div class="examples">
+          <button onclick="setInput('最近 30 天 GMV 怎么样')">最近 30 天 GMV</button>
+          <button onclick="setInput('618 复购率掉了帮我看下')">复购率分析</button>
+          <button onclick="setInput('新客转化漏斗做一下')">转化漏斗</button>
+          <button onclick="setInput('券 ROI 怎么样')">券 ROI</button>
+          <button onclick="setInput('用户留存情况')">用户留存</button>
         </div>
       </div>
+    </div>
 
-      <div class="phase-bar" id="phaseBar">
-        <span class="stage" data-stage="clarifying">1. 需求澄清</span>
-        <span class="stage" data-stage="warehouse_understanding">2. 数仓理解</span>
-        <span class="stage" data-stage="sql_generating">3. SQL 生成</span>
-        <span class="stage" data-stage="executing">4. 执行查询</span>
-        <span class="stage" data-stage="visualizing">5. 可视化</span>
-        <span class="stage" data-stage="writing_conclusion">6. 结论</span>
-        <span class="stage" data-stage="done">✓ 完成</span>
+    <!-- 右下:沟通区 -->
+    <div class="chat-panel" id="chatPanel">
+      <div class="chat-header" onclick="toggleChat()">
+        <div class="title">
+          <span class="dot"></span>
+          <span>💬 沟通区</span>
+        </div>
+        <span class="toggle" id="chatToggle">−</span>
       </div>
-
-      <div class="examples">
-        <span class="label">试试:</span>
-        <button onclick="setInput('最近 30 天 GMV 怎么样')">最近 30 天 GMV</button>
-        <button onclick="setInput('618 复购率掉了帮我看下')">复购率分析</button>
-        <button onclick="setInput('新客转化漏斗做一下')">转化漏斗</button>
-        <button onclick="setInput('券 ROI 怎么样')">券 ROI</button>
-        <button onclick="setInput('用户留存情况')">用户留存</button>
-        <button onclick="setInput('A 类目哪个 SKU 卖得最好')">类目下钻</button>
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg system">说说你想分析什么,我会反复跟你确认口径再动手 ✋</div>
       </div>
-
-      <div class="input-area">
-        <input id="userInput" placeholder="输入你的分析需求... (Enter 发送, Shift+Enter 换行)" autofocus>
+      <div class="chat-confirm" id="chatConfirm">
+        <div class="label">⚠ 请确认以上口径(我没猜)</div>
+        <div class="buttons">
+          <button class="btn-ok" onclick="confirmSpec()">✅ 确认,开干</button>
+          <button class="btn-edit" onclick="editSpec()">✏️ 修改</button>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <input id="userInput" placeholder="输入你的需求 / 回答追问..." autofocus>
         <button id="sendBtn" onclick="send()">发送</button>
       </div>
     </div>
@@ -272,35 +557,51 @@
 <script>
 let currentSessionId = null;
 let isWaiting = false;
+let pendingSpec = null;  // 等 user 确认的 spec
 
 function setInput(text) {
   document.getElementById('userInput').value = text;
   document.getElementById('userInput').focus();
+  document.getElementById('chatPanel').classList.remove('collapsed');
+}
+
+function toggleChat() {
+  const p = document.getElementById('chatPanel');
+  p.classList.toggle('collapsed');
+  document.getElementById('chatToggle').textContent =
+    p.classList.contains('collapsed') ? '+' : '−';
+}
+
+function copySQL() {
+  const txt = document.getElementById('sqlBlock').innerText;
+  if (!txt || txt.includes('还没生成')) return;
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    const old = btn.textContent;
+    btn.textContent = '✓ 已复制';
+    setTimeout(() => btn.textContent = old, 1500);
+  });
 }
 
 function addMessage(role, content) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  div.innerHTML = `<div class="label">${role === 'user' ? '你' : '分析师'}</div><div>${content}</div>`;
-  document.getElementById('messages').appendChild(div);
+  div.textContent = content;
+  document.getElementById('chatMessages').appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-}
-
-function addHtml(role, html) {
-  const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  div.innerHTML = `<div class="label">${role === 'user' ? '你' : '分析师'}</div>${html}`;
-  document.getElementById('messages').appendChild(div);
-  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  // 展开沟通区
+  document.getElementById('chatPanel').classList.remove('collapsed');
+  return div;
 }
 
 function addThinking() {
   const div = document.createElement('div');
   div.className = 'msg thinking';
   div.id = 'thinkingMsg';
-  div.innerHTML = '<div class="label">分析师</div>正在思考...';
-  document.getElementById('messages').appendChild(div);
+  div.textContent = '⏳ 思考中...';
+  document.getElementById('chatMessages').appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return div;
 }
 function removeThinking() {
   const t = document.getElementById('thinkingMsg');
@@ -309,67 +610,194 @@ function removeThinking() {
 
 function updatePhaseBar(phase) {
   const order = ['clarifying', 'warehouse_understanding', 'sql_generating', 'executing', 'visualizing', 'writing_conclusion', 'done'];
-  const labels = { 'clarifying': '澄清中', 'warehouse_understanding': '理解数仓', 'sql_generating': '生成 SQL', 'executing': '执行查询', 'visualizing': '画图', 'writing_conclusion': '写结论', 'done': '完成' };
+  const labels = { 'clarifying': '澄清', 'warehouse_understanding': '数仓', 'sql_generating': 'SQL', 'executing': '执行', 'visualizing': '图表', 'writing_conclusion': '结论', 'done': '✓' };
   const idx = order.indexOf(phase);
-  document.querySelectorAll('#phaseBar .stage').forEach((el) => {
+  document.querySelectorAll('#phaseBar .phase-pill').forEach((el) => {
     const s = el.dataset.stage;
     const i = order.indexOf(s);
     el.classList.remove('active', 'done');
     if (i < idx) el.classList.add('done');
     else if (i === idx) el.classList.add('active');
-    el.textContent = (i + 1) + '. ' + labels[s];
+    el.textContent = (i + 1) + '.' + labels[s];
   });
 }
 
-function renderConclusion(c, sqlResult, sql, chartPath) {
-  let html = `<strong>📋 结论摘要</strong><br>${escapeHtml(c.summary || '')}<br><br>`;
-  if (c.key_findings && c.key_findings.length) {
-    html += '<strong>🔍 关键发现</strong><br>';
-    c.key_findings.forEach((f) => { html += `• ${escapeHtml(f)}<br>`; });
-    html += '<br>';
-  }
-  if (c.business_recommendations && c.business_recommendations.length) {
-    html += '<strong>💡 业务建议</strong><br>';
-    c.business_recommendations.forEach((r) => { html += `${escapeHtml(r)}<br>`; });
-    html += '<br>';
-  }
-  if (c.data_limitations && c.data_limitations.length) {
-    html += '<strong>⚠️ 数据局限</strong><br>';
-    c.data_limitations.forEach((l) => { html += `${escapeHtml(l)}<br>`; });
-    html += '<br>';
-  }
-  if (chartPath) {
-    html += `<strong>📈 图表</strong><br><img src="/api/chart/${chartPath.split('/').pop()}" alt="分析图表"><br>`;
-    if (c.chart_caption) html += `<em>${escapeHtml(c.chart_caption)}</em><br><br>`;
-  }
-  if (sqlResult && sqlResult.columns && sqlResult.rows) {
-    html += '<strong>📊 数据明细</strong><br>';
-    html += '<table><thead><tr>';
-    sqlResult.columns.forEach((c) => { html += `<th>${escapeHtml(c)}</th>`; });
-    html += '</tr></thead><tbody>';
-    sqlResult.rows.slice(0, 20).forEach((r) => {
-      html += '<tr>';
-      sqlResult.columns.forEach((c) => {
-        let v = r[c];
-        if (typeof v === 'number') v = v.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-        html += `<td>${escapeHtml(String(v))}</td>`;
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table><br>';
-  }
-  if (sql) {
-    html += '<strong>🔧 执行的 SQL</strong><br>';
-    html += `<pre>${escapeHtml(sql)}</pre><br>`;
-  }
-  if (c.follow_up_questions && c.follow_up_questions.length) {
-    html += '<strong>🔄 可以继续追问</strong><br>';
-    c.follow_up_questions.forEach((q) => { html += `→ ${escapeHtml(q)}<br>`; });
+// SQL 高亮(简单版,关键字 + 字符串 + 数字)
+function highlightSQL(sql) {
+  if (!sql) return '<span class="empty">// SQL 还没生成</span>';
+  let html = sql
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // 关键字
+  const kws = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
+               'ON', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET', 'WITH', 'AS',
+               'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'NULL', 'NULLIF', 'COALESCE',
+               'INTERVAL', 'DAY', 'MONTH', 'YEAR', 'DATE', 'TIMESTAMP',
+               'SUM', 'COUNT', 'AVG', 'ROUND', 'CAST', 'DATEDIFF', 'DATE_TRUNC',
+               'DISTINCT', 'DESC', 'ASC', 'TRUE', 'FALSE', 'IS', 'IN', 'EXTRACT'];
+  // 单行注释
+  html = html.split('\n').map(line => {
+    if (line.trim().startsWith('--')) {
+      return '<span class="comment">' + line + '</span>';
+    }
+    return line;
+  }).join('\n');
+  // 字符串
+  html = html.replace(/'([^']*)'/g, "<span class=\"string\">'$1'</span>");
+  // 数字
+  html = html.replace(/\b(\d+\.?\d*)\b/g, '<span class="number">$1</span>');
+  // 关键字
+  for (const kw of kws) {
+    const re = new RegExp('\\b' + kw + '\\b', 'g');
+    html = html.replace(re, '<span class="keyword">' + kw + '</span>');
   }
   return html;
 }
 
-function escapeHtml(s) {
+// 渲染主报告区
+function renderReport(state) {
+  const main = document.getElementById('mainContent');
+  const s = state || {};
+  const spec = s.spec;
+  const plan = s.warehouse_plan_summary;
+  const sql = s.sql || '';
+  const res = s.sql_result_summary || {};
+  const chart = s.chart_path;
+  const c = s.conclusion || {};
+
+  let html = '';
+
+  // 1. 口径确认卡
+  if (spec) {
+    const confirmed = spec.user_confirmed === true;
+    html += `
+      <div class="spec-card ${confirmed ? 'confirmed' : ''}">
+        <h3>📋 口径确认${confirmed ? '<span class="badge">✓ 已确认</span>' : '<span class="badge">⚠ 待确认</span>'}</h3>
+        <div class="spec-grid">
+          <div class="row"><div class="k">需求</div><div class="v">${esc(spec.original_query || '')}</div></div>
+          <div class="row"><div class="k">时间范围</div><div class="v">${esc((spec.time_range && spec.time_range.value) || '-')}</div></div>
+          <div class="row"><div class="k">维度</div><div class="v">${(spec.dimensions || []).map(esc).join(', ') || '-'}</div></div>
+          <div class="row"><div class="k">指标</div><div class="v">${(spec.metrics || []).map(m => `${esc(m.name)} <span style="color:#94a3b8;font-size:12px">(${esc(m.definition || '')})</span>`).join('<br>') || '-'}</div></div>
+          <div class="row"><div class="k">对比</div><div class="v">${(spec.comparison || []).map(esc).join(', ') || '-'}</div></div>
+          <div class="row"><div class="k">新/老客</div><div class="v">${esc(spec.segmentation || spec.user_segmentation || '(未指定,默认全部)')}</div></div>
+          <div class="row"><div class="k">过滤</div><div class="v">${esc((spec.filters || []).join(' / ') || '(无额外过滤)')}</div></div>
+          <div class="row"><div class="k">风险</div><div class="v">${esc((spec.assumptions || []).join('; ') || '-')}</div></div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 2. 选表
+  if (plan && plan.tables) {
+    html += `
+      <div class="report-section">
+        <h3>🗂️ 数仓选表</h3>
+        <div class="body">
+          <strong>${esc(plan.tables.join(', '))}</strong>
+          <span class="badge" style="background:${plan.confidence === 'high' ? '#14532d' : plan.confidence === 'medium' ? '#422006' : '#7c2d12'};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:8px">
+            confidence: ${esc(plan.confidence || '?')}
+          </span>
+        </div>
+      </div>
+    `;
+  }
+
+  // 3. 关键发现
+  if (c.key_findings && c.key_findings.length) {
+    html += `
+      <div class="report-section">
+        <h3>🔍 关键发现</h3>
+        <ul class="findings-list">
+          ${c.key_findings.map(f => `<li>${esc(f)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 4. 业务建议
+  if (c.business_recommendations && c.business_recommendations.length) {
+    html += `
+      <div class="report-section">
+        <h3>💡 业务建议</h3>
+        <ul class="recs-list">
+          ${c.business_recommendations.map(r => `<li>${esc(r)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 5. 数据表
+  if (res.ok && res.columns && res.rows) {
+    html += `
+      <div class="report-section">
+        <h3>📊 数据明细 <span style="color:#94a3b8;font-size:12px;font-weight:400">(${res.row_count} 行 × ${res.columns.length} 列)</span></h3>
+        <div style="overflow-x:auto">
+          <table class="data-table">
+            <thead><tr>${res.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+            <tbody>${res.rows.slice(0, 50).map(r => `<tr>${res.columns.map(c => {
+              let v = r[c];
+              if (typeof v === 'number') v = v.toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+              return `<td>${esc(String(v))}</td>`;
+            }).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // 6. 图表
+  if (chart) {
+    html += `
+      <div class="report-section">
+        <h3>📈 图表</h3>
+        <img class="chart-img" src="/api/chart/${chart.split('/').pop()}" alt="分析图表">
+        ${c.chart_caption ? `<p style="color:#94a3b8;font-size:13px;margin:8px 0 0;font-style:italic">${esc(c.chart_caption)}</p>` : ''}
+      </div>
+    `;
+  }
+
+  // 7. 摘要
+  if (c.summary) {
+    html += `
+      <div class="report-section">
+        <h3>📝 结论摘要</h3>
+        <div class="summary-text">${esc(c.summary)}</div>
+      </div>
+    `;
+  }
+
+  // 8. 数据局限
+  if (c.data_limitations && c.data_limitations.length) {
+    html += `
+      <div class="report-section" style="border-color:#f59e0b">
+        <h3 style="color:#fbbf24">⚠️ 数据局限</h3>
+        <ul class="limitation-list">
+          ${c.data_limitations.map(l => `<li>${esc(l)}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  // 9. 追问方向
+  if (c.follow_up_questions && c.follow_up_questions.length) {
+    html += `
+      <div class="report-section">
+        <h3>🔄 可以继续追问</h3>
+        <div class="body">
+          ${c.follow_up_questions.map(q => `<div style="padding:4px 0;color:#94a3b8">→ ${esc(q)}</div>`).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  if (!html) {
+    html = `<div class="empty-state"><h2>⏳ 等待中</h2><p>说点什么,我来处理</p></div>`;
+  }
+  main.innerHTML = html;
+}
+
+function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s)
     .replace(/&/g, '&amp;')
@@ -379,22 +807,47 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-async function send() {
+// 显示确认按钮(口径卡)
+function showConfirmPanel(spec) {
+  pendingSpec = spec;
+  const panel = document.getElementById('chatConfirm');
+  panel.classList.add('show');
+  // 在沟通区追加系统消息
+  addMessage('system', '📋 口径已整理,见左侧主区。请确认后再继续。');
+}
+
+function confirmSpec() {
+  if (!currentSessionId) return;
+  // 发 "确认" 给后端
+  document.getElementById('chatConfirm').classList.remove('show');
+  pendingSpec = null;
+  addMessage('user', '✅ 确认,按这个口径跑');
+  send('confirm');
+}
+
+function editSpec() {
+  document.getElementById('chatConfirm').classList.remove('show');
+  document.getElementById('userInput').value = '改一下口径:';
+  document.getElementById('userInput').focus();
+}
+
+async function send(overrideText) {
   if (isWaiting) return;
   const input = document.getElementById('userInput');
-  const text = input.value.trim();
+  const text = overrideText || input.value.trim();
   if (!text) return;
-  input.value = '';
+  if (!overrideText) input.value = '';
 
   isWaiting = true;
   document.getElementById('sendBtn').disabled = true;
-  addMessage('user', text);
+
+  // 用户消息只在 override 时不显示(已在 addMessage 中显示)
+  if (!overrideText) addMessage('user', text);
 
   addThinking();
   try {
     let resp, data;
     if (!currentSessionId) {
-      // 新会话
       const r = await fetch('/api/chat/new', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -403,7 +856,6 @@ async function send() {
       data = await r.json();
       currentSessionId = data.session_id;
     } else {
-      // 继续推进
       const r = await fetch(`/api/chat/${currentSessionId}/step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -412,47 +864,37 @@ async function send() {
       data = await r.json();
     }
     removeThinking();
+
+    const s = data.state || {};
     updatePhaseBar(data.phase);
 
-    if (data.phase === 'clarifying') {
-      addMessage('assistant', data.reply || '请补充信息');
+    // 报告区
+    renderReport(s);
+
+    // SQL 区
+    const sqlBlock = document.getElementById('sqlBlock');
+    if (s.sql) {
+      sqlBlock.innerHTML = highlightSQL(s.sql);
+    }
+
+    // 沟通区:加 assistant 回复
+    if (data.reply) {
+      addMessage('assistant', data.reply);
     } else if (data.phase === 'done') {
-      const s = data.state;
-      const html = renderConclusion(s.conclusion || {}, s.sql_result_summary ? { columns: s.sql_result_summary.columns, rows: [] } : {}, s.sql, s.chart_path);
-      addHtml('assistant', html);
+      addMessage('system', '✅ 分析完成,结果见主区');
     } else if (data.phase === 'error') {
-      addHtml('system', `❌ 出错了: ${data.state?.error || '未知错误'}`);
+      addMessage('system', '❌ 错误: ' + (s.error || '未知'));
+    }
+
+    // 等 user 确认
+    if (data.phase === 'awaiting_confirmation' && s.spec) {
+      showConfirmPanel(s.spec);
     } else {
-      // 阶段中,展示中间过程
-      const s = data.state;
-      let html = '';
-      if (s.spec) {
-        html += `<strong>📋 需求规格</strong><br>• 时间: ${s.spec.time_range?.value || '?'}<br>• 维度: ${(s.spec.dimensions || []).join(', ')}<br>• 指标: ${(s.spec.metrics || []).map((m) => m.name).join(', ')}<br><br>`;
-      }
-      if (s.warehouse_plan_summary?.tables?.length) {
-        html += `<strong>🗂️ 选表</strong>: ${s.warehouse_plan_summary.tables.join(', ')} (confidence: ${s.warehouse_plan_summary.confidence})<br><br>`;
-      }
-      if (s.sql) {
-        html += `<strong>🔧 生成的 SQL</strong><br><pre>${escapeHtml(s.sql)}</pre>`;
-      }
-      if (s.sql_result_summary) {
-        if (s.sql_result_summary.error) {
-          html += `❌ SQL 执行失败: ${s.sql_result_summary.error}<br>`;
-        } else {
-          html += `✅ SQL 执行成功,返回 ${s.sql_result_summary.row_count} 行 ${s.sql_result_summary.columns?.length || 0} 列<br>`;
-        }
-      }
-      if (s.chart_path) {
-        html += `<img src="/api/chart/${s.chart_path.split('/').pop()}" alt="chart">`;
-      }
-      if (s.conclusion) {
-        html = renderConclusion(s.conclusion, {}, s.sql, s.chart_path);
-      }
-      addHtml('assistant', html || `正在 ${data.phase} ...`);
+      document.getElementById('chatConfirm').classList.remove('show');
     }
   } catch (e) {
     removeThinking();
-    addHtml('system', `❌ 请求失败: ${e.message}`);
+    addMessage('system', '❌ 请求失败: ' + e.message);
   } finally {
     isWaiting = false;
     document.getElementById('sendBtn').disabled = false;

@@ -68,11 +68,12 @@ def chat_step(session_id: str, req: StepReq):
     except ValueError as e:
         raise HTTPException(404, str(e))
 
-    # 如果已 ready,自动跑完后续阶段
-    if st.phase not in ("clarifying", "done", "error"):
+    # 仅在 ready 后(用户已显式确认)才自动跑完后续
+    # clarifying / awaiting_confirmation 必须停,等 user
+    if st.phase == "ready":
         st = workflow.run_through(session_id)
 
-    is_question = (st.phase == "clarifying")
+    is_question = st.phase in ("clarifying", "awaiting_confirmation")
     return NewChatResp(
         session_id=st.session_id,
         state=st.to_public_dict(),
