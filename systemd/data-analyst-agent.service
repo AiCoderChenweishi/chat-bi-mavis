@@ -4,10 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=mavis
-WorkingDirectory=/opt/mavis-dev/data-analyst-agent
-Environment="MINIMAX_API_KEY="
-Environment="DEEPSEEK_API_KEY="
+User=root
+WorkingDirectory=/opt/data-analyst-agent
+# DEEPSEEK_API_KEY 实际值不放这里,从 /opt/data-analyst-agent/.env 读
+# 部署时执行: cp .env.example .env && vim .env 填入真实 key
+EnvironmentFile=/opt/data-analyst-agent/.env
 ExecStart=/usr/bin/python3 -u server.py
 Restart=always
 RestartSec=5
