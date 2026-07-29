@@ -562,6 +562,189 @@
     }
     .phase-pill.active { background: #1e3a8a; color: #93c5fd; border-color: #3b82f6; }
     .phase-pill.done { background: #14532d; color: #86efac; border-color: #4ade80; }
+
+    /* v0.3 header tabs + KB pane */
+    .header-tabs { display: flex; gap: 4px; }
+    .tab-btn {
+      cursor: pointer;
+      font-family: inherit;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .tab-btn:hover { background: rgba(255, 255, 255, 0.05); color: #e6e6e6; }
+    .tab-btn.active { background: #1e3a8a; color: #93c5fd; border-color: #3b82f6; }
+    .tab-badge {
+      background: #475569;
+      color: #cbd5e1;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      min-width: 18px;
+      text-align: center;
+    }
+    .tab-btn.active .tab-badge { background: #3b82f6; color: #fff; }
+
+    /* KB pane 全屏覆盖 (跟 main-pane 同级, 默认 hidden) */
+    .kb-pane {
+      grid-area: main;
+      background: #0f1419;
+      overflow-y: auto;
+      padding: 24px 32px;
+      display: none;
+    }
+    .kb-pane.show { display: block; }
+    .kb-stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .kb-stat-card {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .kb-stat-card .label {
+      font-size: 11px; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .kb-stat-card .value { font-size: 22px; font-weight: 600; color: #e6e6e6; }
+    .kb-stat-card .sub { font-size: 11px; color: #64748b; margin-top: 2px; }
+    .kb-toolbar {
+      display: flex; gap: 10px; align-items: center;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .kb-search {
+      flex: 1; min-width: 200px;
+      padding: 7px 12px;
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 4px;
+      color: #e6e6e6;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .kb-search:focus { outline: none; border-color: #3b82f6; }
+    .kb-category-select {
+      padding: 7px 10px;
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 4px;
+      color: #e6e6e6;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .kb-refresh-btn {
+      padding: 7px 12px;
+      background: #2d3748;
+      border: 1px solid #475569;
+      color: #cbd5e1;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .kb-refresh-btn:hover { background: #475569; }
+
+    .kb-list { display: flex; flex-direction: column; gap: 10px; }
+    .kb-card {
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      border-radius: 6px;
+      padding: 14px 18px;
+      transition: border-color 0.15s;
+    }
+    .kb-card:hover { border-color: #475569; }
+    .kb-card-head {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 8px; flex-wrap: wrap;
+    }
+    .kb-category-badge {
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .kb-category-洞察 { background: #1e3a8a; color: #93c5fd; }
+    .kb-category-方法论 { background: #14532d; color: #86efac; }
+    .kb-category-数据结果 { background: #7c2d12; color: #fed7aa; }
+    .kb-category-模板 { background: #5b21b6; color: #c4a5f7; }
+    .kb-category-行业 { background: #134e4a; color: #5eead4; }
+    .kb-category-竞品 { background: #9f1239; color: #fda4af; }
+    .kb-confidence {
+      font-size: 11px; color: #94a3b8;
+    }
+    .kb-card-id {
+      font-size: 10px; color: #64748b; font-family: monospace;
+    }
+    .kb-title {
+      font-size: 14px; font-weight: 600; color: #e6e6e6;
+      margin-bottom: 6px; line-height: 1.4;
+    }
+    .kb-content {
+      font-size: 12px; color: #cbd5e1; line-height: 1.6;
+      max-height: 60px; overflow: hidden; position: relative;
+    }
+    .kb-content.expanded { max-height: none; }
+    .kb-content-toggle {
+      color: #60a5fa; font-size: 11px; cursor: pointer;
+      margin-top: 4px; user-select: none;
+    }
+    .kb-content-toggle:hover { text-decoration: underline; }
+    .kb-card-foot {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid #2d3748;
+      font-size: 11px; color: #64748b;
+    }
+    .kb-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+    .kb-tag {
+      padding: 1px 6px; background: #2d3748; color: #94a3b8;
+      border-radius: 3px; font-size: 10px;
+    }
+    .kb-del-btn {
+      background: transparent;
+      border: 1px solid #475569;
+      color: #94a3b8;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .kb-del-btn:hover { border-color: #ef4444; color: #fca5a5; }
+    .kb-empty {
+      text-align: center; padding: 60px 20px;
+      color: #64748b; font-size: 13px;
+    }
+    .kb-empty .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+    .kb-pagination {
+      display: flex; justify-content: center; gap: 6px;
+      margin-top: 20px;
+    }
+    .kb-page-btn {
+      padding: 5px 10px;
+      background: #1a1f2e;
+      border: 1px solid #2d3748;
+      color: #cbd5e1;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .kb-page-btn:hover { background: #2d3748; }
+    .kb-page-btn.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
   </style>
 
 <style>
@@ -618,10 +801,14 @@
 <body>
   <header>
     <h1>📊 数据分析 Agent</h1>
+    <div class="header-tabs">
+      <button class="tab-btn active" id="tab-chat" onclick="switchPane('chat')">💬 对话</button>
+      <button class="tab-btn" id="tab-kb" onclick="switchPane('kb')">📚 知识库 <span class="tab-badge" id="kbBadge">0</span></button>
+    </div>
     <div class="header-meta">
       <span class="pill" id="llmPill">LLM: 检测中...</span>
       <span class="pill mock">⚠ MOCK 数据演示</span>
-      <button class="btn-kb-save" id="btn-save-kb" title="把整个页面内容用 AI 总结成一条知识存入知识库">
+      <button class="btn-kb-save" id="btn-save-kb" title="把整个页面内容用 AI 总结成一条知识存入知识库" style="display:none">
         📥 存储洞察到知识库
       </button>
     </div>
@@ -693,6 +880,20 @@
         <button id="sendBtn" onclick="send()">发送</button>
       </div>
     </div>
+  </div>
+
+  <!-- v0.3 KB 知识库浏览页 (跟 main-pane 同级, 默认隐藏) -->
+  <div class="kb-pane" id="kbPane">
+    <div class="kb-stats-row" id="kbStatsRow"></div>
+    <div class="kb-toolbar">
+      <input type="text" class="kb-search" id="kbSearch" placeholder="🔍 搜索知识库 (title / content / tags)" onkeyup="if(event.key==='Enter') kbSearchRun()">
+      <select class="kb-category-select" id="kbCategory" onchange="kbSearchRun()">
+        <option value="">所有分类</option>
+      </select>
+      <button class="kb-refresh-btn" onclick="kbLoadAll()">🔄 刷新</button>
+    </div>
+    <div class="kb-list" id="kbList"></div>
+    <div class="kb-pagination" id="kbPagination"></div>
   </div>
 
 <script src="/static/js/echarts.min.js"></script>
@@ -1225,6 +1426,207 @@ document.getElementById('userInput').addEventListener('keydown', (e) => {
   } catch (e) {
     document.getElementById('llmPill').textContent = 'LLM: 离线';
   }
+})();
+
+// ============================================================
+// v0.3 KB 知识库浏览页
+// ============================================================
+let kbAllEntries = [];
+let kbCurrentPage = 1;
+const KB_PAGE_SIZE = 10;
+
+function switchPane(pane) {
+  if (pane === 'chat') {
+    document.getElementById('tab-chat').classList.add('active');
+    document.getElementById('tab-kb').classList.remove('active');
+    document.querySelector('.main-pane').style.display = '';
+    document.getElementById('kbPane').classList.remove('show');
+    document.getElementById('btn-save-kb').style.display = 'none';
+  } else {
+    document.getElementById('tab-kb').classList.add('active');
+    document.getElementById('tab-chat').classList.remove('active');
+    document.querySelector('.main-pane').style.display = 'none';
+    document.getElementById('kbPane').classList.add('show');
+    document.getElementById('btn-save-kb').style.display = '';
+    kbLoadAll();
+  }
+}
+
+async function kbLoadStats() {
+  try {
+    const r = await fetch('/api/kb/stats');
+    const s = await r.json();
+    const stats = s.by_category || {};
+    const bySource = s.by_source || {};
+    const row = document.getElementById('kbStatsRow');
+    row.innerHTML = `
+      <div class="kb-stat-card">
+        <div class="label">📚 知识库总数</div>
+        <div class="value">${s.total || 0}</div>
+        <div class="sub">${s.db_path ? s.db_path.split('/').pop() : ''}</div>
+      </div>
+      <div class="kb-stat-card">
+        <div class="label">🏷 分类数</div>
+        <div class="value">${Object.keys(stats).length}</div>
+        <div class="sub">${Object.entries(stats).map(([k,v]) => `${k}: ${v}`).join(' · ') || '(空)'}</div>
+      </div>
+      <div class="kb-stat-card">
+        <div class="label">📥 来源数</div>
+        <div class="value">${Object.keys(bySource).length}</div>
+        <div class="sub">${Object.entries(bySource).map(([k,v]) => `${k}: ${v}`).join(' · ') || '(空)'}</div>
+      </div>
+      <div class="kb-stat-card">
+        <div class="label">📊 平均置信度</div>
+        <div class="value">${s.avg_confidence ? s.avg_confidence.toFixed(2) : '—'}</div>
+        <div class="sub">0-1 scale</div>
+      </div>
+    `;
+    // category 下拉
+    const sel = document.getElementById('kbCategory');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">所有分类</option>' +
+      Object.keys(stats).map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)} (${stats[c]})</option>`).join('');
+    if (cur) sel.value = cur;
+  } catch (e) {
+    console.error('kbLoadStats failed', e);
+  }
+}
+
+async function kbLoadAll() {
+  await kbLoadStats();
+  const q = document.getElementById('kbSearch').value.trim();
+  const cat = document.getElementById('kbCategory').value;
+  if (q) {
+    return kbSearchRun();
+  }
+  // list mode
+  const url = '/api/kb/list?limit=200' + (cat ? `&category=${encodeURIComponent(cat)}` : '');
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    kbAllEntries = d.entries || [];
+    kbCurrentPage = 1;
+    kbRender();
+    document.getElementById('kbBadge').textContent = d.count || 0;
+  } catch (e) {
+    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 加载失败: ${escapeHtml(String(e))}</div>`;
+  }
+}
+
+async function kbSearchRun() {
+  const q = document.getElementById('kbSearch').value.trim();
+  const cat = document.getElementById('kbCategory').value;
+  if (!q) { return kbLoadAll(); }
+  const url = '/api/kb/search?q=' + encodeURIComponent(q) + '&limit=200' + (cat ? `&category=${encodeURIComponent(cat)}` : '');
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    kbAllEntries = d.entries || [];
+    kbCurrentPage = 1;
+    kbRender();
+    document.getElementById('kbBadge').textContent = d.count || 0;
+  } catch (e) {
+    document.getElementById('kbList').innerHTML = `<div class="kb-empty">❌ 搜索失败: ${escapeHtml(String(e))}</div>`;
+  }
+}
+
+function kbRender() {
+  const list = document.getElementById('kbList');
+  if (!kbAllEntries.length) {
+    list.innerHTML = `<div class="kb-empty"><div class="icon">📭</div>知识库是空的<br><small style="margin-top:8px;display:block">去对话页跑一个分析,再点"📥 存储洞察到知识库"</small></div>`;
+    document.getElementById('kbPagination').innerHTML = '';
+    return;
+  }
+  const total = kbAllEntries.length;
+  const totalPages = Math.ceil(total / KB_PAGE_SIZE);
+  if (kbCurrentPage > totalPages) kbCurrentPage = totalPages;
+  const start = (kbCurrentPage - 1) * KB_PAGE_SIZE;
+  const end = Math.min(start + KB_PAGE_SIZE, total);
+  const pageItems = kbAllEntries.slice(start, end);
+
+  list.innerHTML = pageItems.map(e => kbCardHtml(e)).join('');
+
+  // 分页
+  const pag = document.getElementById('kbPagination');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+  let html = '';
+  html += `<button class="kb-page-btn" onclick="kbGoPage(${kbCurrentPage-1})" ${kbCurrentPage===1?'disabled':''}>‹ 上一页</button>`;
+  for (let p = 1; p <= totalPages; p++) {
+    if (totalPages > 7 && p > 2 && p < totalPages-1 && Math.abs(p - kbCurrentPage) > 1) {
+      if (p === 3 || p === totalPages-2) html += `<span style="color:#64748b;padding:5px">…</span>`;
+      continue;
+    }
+    html += `<button class="kb-page-btn ${p===kbCurrentPage?'active':''}" onclick="kbGoPage(${p})">${p}</button>`;
+  }
+  html += `<button class="kb-page-btn" onclick="kbGoPage(${kbCurrentPage+1})" ${kbCurrentPage===totalPages?'disabled':''}>下一页 ›</button>`;
+  pag.innerHTML = html;
+}
+
+function kbCardHtml(e) {
+  const cat = e.category || '未分类';
+  const tagsHtml = (e.tags || []).map(t => `<span class="kb-tag">${escapeHtml(t)}</span>`).join('');
+  const conf = e.confidence != null ? e.confidence.toFixed(2) : '—';
+  const confPct = Math.round((e.confidence || 0) * 100);
+  const confColor = confPct >= 80 ? '#10b981' : (confPct >= 50 ? '#f59e0b' : '#ef4444');
+  return `
+    <div class="kb-card">
+      <div class="kb-card-head">
+        <span class="kb-category-badge kb-category-${escapeHtml(cat)}">${escapeHtml(cat)}</span>
+        <span class="kb-confidence" style="color:${confColor}">● ${conf}</span>
+        <span class="kb-card-id">#${e.id}</span>
+      </div>
+      <div class="kb-title">${escapeHtml(e.title || '(无标题)')}</div>
+      <div class="kb-content" id="kb-content-${e.id}">${escapeHtml(e.content || '')}</div>
+      ${(e.content || '').length > 200 ? `<div class="kb-content-toggle" onclick="kbToggleContent(${e.id})">展开 / 收起</div>` : ''}
+      <div class="kb-card-foot">
+        <div class="kb-tags">${tagsHtml || '<span style="color:#475569">无标签</span>'}</div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <span>📅 ${escapeHtml((e.created_at || '').slice(0, 10))}</span>
+          <span>📥 ${escapeHtml(e.source || 'manual')}</span>
+          <button class="kb-del-btn" onclick="kbDelete(${e.id})">🗑 删除</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function kbToggleContent(id) {
+  const el = document.getElementById('kb-content-' + id);
+  if (el) el.classList.toggle('expanded');
+}
+
+function kbGoPage(p) {
+  if (p < 1) return;
+  const totalPages = Math.ceil(kbAllEntries.length / KB_PAGE_SIZE);
+  if (p > totalPages) return;
+  kbCurrentPage = p;
+  kbRender();
+  document.getElementById('kbList').scrollIntoView({behavior: 'smooth'});
+}
+
+async function kbDelete(id) {
+  if (!confirm(`确认删除 KB #${id} ?`)) return;
+  try {
+    const r = await fetch(`/api/kb/${id}`, {method: 'DELETE'});
+    const d = await r.json();
+    if (d.ok) {
+      kbShowToast('✅ KB #' + id + ' 已删除', true);
+      await kbLoadAll();
+    } else {
+      kbShowToast('❌ 删除失败', false);
+    }
+  } catch (e) {
+    kbShowToast('❌ 删除失败: ' + escapeHtml(String(e)), false);
+  }
+}
+
+// 首屏初始化 KB badge (默认 pane 隐藏, 但 badge 要有数字)
+(async () => {
+  try {
+    const r = await fetch('/api/kb/stats');
+    const s = await r.json();
+    document.getElementById('kbBadge').textContent = s.total || 0;
+  } catch (e) { /* ignore */ }
 })();
 </script>
 </body>

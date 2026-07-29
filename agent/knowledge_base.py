@@ -157,10 +157,13 @@ class KnowledgeBase:
             by_source = dict(
                 conn.execute("SELECT source, COUNT(*) FROM kb_entries GROUP BY source").fetchall()
             )
+            avg_conf_row = conn.execute("SELECT AVG(confidence) FROM kb_entries").fetchone()
+            avg_confidence = round(avg_conf_row[0], 3) if avg_conf_row[0] is not None else None
             return {
                 "total": total,
                 "by_category": by_category,
                 "by_source": by_source,
+                "avg_confidence": avg_confidence,
                 "db_path": self.db_path,
             }
 

@@ -237,10 +237,31 @@ def kb_add(body: KBEntryIn):
     return {"ok": True, "id": eid}
 
 
+@app.get("/api/kb/{entry_id}")
+def kb_get(entry_id: int):
+    """单条 KB 详情 (UI 详情页用)"""
+    e = get_kb().get(entry_id)
+    if not e:
+        raise HTTPException(404, f"KB entry {entry_id} not found")
+    return {
+        "id": e.id, "category": e.category, "title": e.title,
+        "content": e.content, "source": e.source, "tags": e.tags,
+        "confidence": e.confidence, "created_at": e.created_at,
+        "updated_at": e.updated_at,
+    }
+
+
 @app.delete("/api/kb/{entry_id}")
 def kb_delete(entry_id: int):
     ok = get_kb().delete_entry(entry_id)
     return {"ok": ok}
+
+
+@app.get("/api/kb/categories/list")
+def kb_categories():
+    """所有 category 列表 (UI 下拉过滤用)"""
+    stats = get_kb().get_stats()
+    return {"categories": list(stats.get("by_category", {}).keys())}
 
 
 @app.post("/api/kb/recall")

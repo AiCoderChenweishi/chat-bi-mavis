@@ -522,6 +522,16 @@ class SQLGenerator:
 {json.dumps(warehouse_plan, ensure_ascii=False, indent=2)}
 
 请按 system prompt 的 JSON schema 输出 DuckDB SQL,必须含 5 项自检全过。"""
+
+        # v0.3 RAG 召回 — 写 SQL 前先去 KB 找历史类似的 SQL 模板/口径
+        # 跟 Clarify/Conclude 一样, 调 LLM 前 recall_for_context
+        rag_query = (spec or {}).get("original_query", "") + " " + " ".join(
+            (m.get("name", "") for m in (spec or {}).get("metrics", []))
+        )
+        rag_context = get_kb().recall_for_context(rag_query, limit=5)
+        if rag_context:
+            user = user + "\n\n---\n\n" + rag_context + "\n\n(以上为知识库相关历史 SQL 模板/口径, 可参考复用 SQL 模式, 但不要直接抄, 跟当前数仓/口径不符可忽略)"
+
         raw = self.llm.call(self.system, user, json_mode=True, temperature=0.1)
         result = safe_json_loads(raw)
         if not isinstance(result, dict) or "sql" not in result:
