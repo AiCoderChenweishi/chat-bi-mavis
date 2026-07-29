@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数据分析 Agent — 多轮对话版</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0f1419;
+      color: #e6e6e6;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 16px 24px;
+      background: #1a1f2e;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .header-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .pill {
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #2d3748;
+      font-size: 11px;
+    }
+    .pill.mock { background: #7c2d12; color: #fed7aa; }
+    .pill.live { background: #14532d; color: #bbf7d0; }
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .chat-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 720px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .msg {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.6;
+      font-size: 14px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: #2563eb;
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-bottom-left-radius: 2px;
+    }
+    .msg.system {
+      align-self: center;
+      background: #422006;
+      color: #fde68a;
+      font-size: 12px;
+      padding: 6px 12px;
+      max-width: 95%;
+    }
+    .msg.thinking {
+      align-self: flex-start;
+      background: #1e293b;
+      border: 1px dashed #475569;
+      font-style: italic;
+      color: #94a3b8;
+    }
+    .msg .label {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .msg pre {
+      background: #0f172a;
+      padding: 8px 12px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 12px;
+      margin: 8px 0;
+    }
+    .msg table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    .msg table th, .msg table td {
+      border: 1px solid #334155;
+      padding: 6px 10px;
+      text-align: right;
+    }
+    .msg table th {
+      background: #1e293b;
+      font-weight: 600;
+      text-align: center;
+    }
+    .msg img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin: 8px 0;
+    }
+    .input-area {
+      padding: 16px 24px;
+      background: #1a1f2e;
+      border-top: 1px solid #2d3748;
+      display: flex;
+      gap: 8px;
+    }
+    .input-area input {
+      flex: 1;
+      padding: 12px 16px;
+      background: #0f172a;
+      color: #e6e6e6;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    .input-area input:focus {
+      border-color: #3b82f6;
+    }
+    .input-area button {
+      padding: 12px 24px;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    .input-area button:hover { background: #2563eb; }
+    .input-area button:disabled {
+      background: #475569;
+      cursor: not-allowed;
+    }
+    .examples {
+      padding: 8px 24px;
+      background: #1a1f2e;
+      border-top: 1px solid #2d3748;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .examples .label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-right: 4px;
+    }
+    .examples button {
+      padding: 4px 10px;
+      background: #0f172a;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .examples button:hover {
+      background: #1e293b;
+      border-color: #475569;
+    }
+    .phase-bar {
+      padding: 6px 24px;
+      background: #0f1419;
+      border-top: 1px solid #2d3748;
+      font-size: 12px;
+      color: #94a3b8;
+      text-align: center;
+    }
+    .phase-bar .stage {
+      margin: 0 6px;
+      opacity: 0.4;
+    }
+    .phase-bar .stage.active {
+      opacity: 1;
+      color: #60a5fa;
+      font-weight: 600;
+    }
+    .phase-bar .stage.done {
+      opacity: 1;
+      color: #4ade80;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📊 数据分析 Agent</h1>
+    <div class="header-meta">
+      <span class="pill" id="llmPill">LLM: 检测中...</span>
+      <span class="pill mock">⚠️ MOCK 数据演示</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="chat-pane">
+      <div class="messages" id="messages">
+        <div class="msg system">
+          <div class="label">系统</div>
+          欢迎使用数据分析 Agent。直接告诉我你想分析什么,例如:
+          "最近 30 天 GMV 怎么样"、"618 复购率掉了帮我看下"、"新客转化漏斗做一下"。
+          <br><br>
+          <strong>当前数仓</strong>:电商 mock 数仓 (DWD 6 张 + DWS 5 张 + ADS 5 张,数据范围 2025-01-01 ~ 2026-07-31)
+        </div>
+      </div>
+
+      <div class="phase-bar" id="phaseBar">
+        <span class="stage" data-stage="clarifying">1. 需求澄清</span>
+        <span class="stage" data-stage="warehouse_understanding">2. 数仓理解</span>
+        <span class="stage" data-stage="sql_generating">3. SQL 生成</span>
+        <span class="stage" data-stage="executing">4. 执行查询</span>
+        <span class="stage" data-stage="visualizing">5. 可视化</span>
+        <span class="stage" data-stage="writing_conclusion">6. 结论</span>
+        <span class="stage" data-stage="done">✓ 完成</span>
+      </div>
+
+      <div class="examples">
+        <span class="label">试试:</span>
+        <button onclick="setInput('最近 30 天 GMV 怎么样')">最近 30 天 GMV</button>
+        <button onclick="setInput('618 复购率掉了帮我看下')">复购率分析</button>
+        <button onclick="setInput('新客转化漏斗做一下')">转化漏斗</button>
+        <button onclick="setInput('券 ROI 怎么样')">券 ROI</button>
+        <button onclick="setInput('用户留存情况')">用户留存</button>
+        <button onclick="setInput('A 类目哪个 SKU 卖得最好')">类目下钻</button>
+      </div>
+
+      <div class="input-area">
+        <input id="userInput" placeholder="输入你的分析需求... (Enter 发送, Shift+Enter 换行)" autofocus>
+        <button id="sendBtn" onclick="send()">发送</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let currentSessionId = null;
+let isWaiting = false;
+
+function setInput(text) {
+  document.getElementById('userInput').value = text;
+  document.getElementById('userInput').focus();
+}
+
+function addMessage(role, content) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = `<div class="label">${role === 'user' ? '你' : '分析师'}</div><div>${content}</div>`;
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function addHtml(role, html) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = `<div class="label">${role === 'user' ? '你' : '分析师'}</div>${html}`;
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function addThinking() {
+  const div = document.createElement('div');
+  div.className = 'msg thinking';
+  div.id = 'thinkingMsg';
+  div.innerHTML = '<div class="label">分析师</div>正在思考...';
+  document.getElementById('messages').appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+function removeThinking() {
+  const t = document.getElementById('thinkingMsg');
+  if (t) t.remove();
+}
+
+function updatePhaseBar(phase) {
+  const order = ['clarifying', 'warehouse_understanding', 'sql_generating', 'executing', 'visualizing', 'writing_conclusion', 'done'];
+  const labels = { 'clarifying': '澄清中', 'warehouse_understanding': '理解数仓', 'sql_generating': '生成 SQL', 'executing': '执行查询', 'visualizing': '画图', 'writing_conclusion': '写结论', 'done': '完成' };
+  const idx = order.indexOf(phase);
+  document.querySelectorAll('#phaseBar .stage').forEach((el) => {
+    const s = el.dataset.stage;
+    const i = order.indexOf(s);
+    el.classList.remove('active', 'done');
+    if (i < idx) el.classList.add('done');
+    else if (i === idx) el.classList.add('active');
+    el.textContent = (i + 1) + '. ' + labels[s];
+  });
+}
+
+function renderConclusion(c, sqlResult, sql, chartPath) {
+  let html = `<strong>📋 结论摘要</strong><br>${escapeHtml(c.summary || '')}<br><br>`;
+  if (c.key_findings && c.key_findings.length) {
+    html += '<strong>🔍 关键发现</strong><br>';
+    c.key_findings.forEach((f) => { html += `• ${escapeHtml(f)}<br>`; });
+    html += '<br>';
+  }
+  if (c.business_recommendations && c.business_recommendations.length) {
+    html += '<strong>💡 业务建议</strong><br>';
+    c.business_recommendations.forEach((r) => { html += `${escapeHtml(r)}<br>`; });
+    html += '<br>';
+  }
+  if (c.data_limitations && c.data_limitations.length) {
+    html += '<strong>⚠️ 数据局限</strong><br>';
+    c.data_limitations.forEach((l) => { html += `${escapeHtml(l)}<br>`; });
+    html += '<br>';
+  }
+  if (chartPath) {
+    html += `<strong>📈 图表</strong><br><img src="/api/chart/${chartPath.split('/').pop()}" alt="分析图表"><br>`;
+    if (c.chart_caption) html += `<em>${escapeHtml(c.chart_caption)}</em><br><br>`;
+  }
+  if (sqlResult && sqlResult.columns && sqlResult.rows) {
+    html += '<strong>📊 数据明细</strong><br>';
+    html += '<table><thead><tr>';
+    sqlResult.columns.forEach((c) => { html += `<th>${escapeHtml(c)}</th>`; });
+    html += '</tr></thead><tbody>';
+    sqlResult.rows.slice(0, 20).forEach((r) => {
+      html += '<tr>';
+      sqlResult.columns.forEach((c) => {
+        let v = r[c];
+        if (typeof v === 'number') v = v.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+        html += `<td>${escapeHtml(String(v))}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table><br>';
+  }
+  if (sql) {
+    html += '<strong>🔧 执行的 SQL</strong><br>';
+    html += `<pre>${escapeHtml(sql)}</pre><br>`;
+  }
+  if (c.follow_up_questions && c.follow_up_questions.length) {
+    html += '<strong>🔄 可以继续追问</strong><br>';
+    c.follow_up_questions.forEach((q) => { html += `→ ${escapeHtml(q)}<br>`; });
+  }
+  return html;
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function send() {
+  if (isWaiting) return;
+  const input = document.getElementById('userInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+
+  isWaiting = true;
+  document.getElementById('sendBtn').disabled = true;
+  addMessage('user', text);
+
+  addThinking();
+  try {
+    let resp, data;
+    if (!currentSessionId) {
+      // 新会话
+      const r = await fetch('/api/chat/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+      data = await r.json();
+      currentSessionId = data.session_id;
+    } else {
+      // 继续推进
+      const r = await fetch(`/api/chat/${currentSessionId}/step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+      data = await r.json();
+    }
+    removeThinking();
+    updatePhaseBar(data.phase);
+
+    if (data.phase === 'clarifying') {
+      addMessage('assistant', data.reply || '请补充信息');
+    } else if (data.phase === 'done') {
+      const s = data.state;
+      const html = renderConclusion(s.conclusion || {}, s.sql_result_summary ? { columns: s.sql_result_summary.columns, rows: [] } : {}, s.sql, s.chart_path);
+      addHtml('assistant', html);
+    } else if (data.phase === 'error') {
+      addHtml('system', `❌ 出错了: ${data.state?.error || '未知错误'}`);
+    } else {
+      // 阶段中,展示中间过程
+      const s = data.state;
+      let html = '';
+      if (s.spec) {
+        html += `<strong>📋 需求规格</strong><br>• 时间: ${s.spec.time_range?.value || '?'}<br>• 维度: ${(s.spec.dimensions || []).join(', ')}<br>• 指标: ${(s.spec.metrics || []).map((m) => m.name).join(', ')}<br><br>`;
+      }
+      if (s.warehouse_plan_summary?.tables?.length) {
+        html += `<strong>🗂️ 选表</strong>: ${s.warehouse_plan_summary.tables.join(', ')} (confidence: ${s.warehouse_plan_summary.confidence})<br><br>`;
+      }
+      if (s.sql) {
+        html += `<strong>🔧 生成的 SQL</strong><br><pre>${escapeHtml(s.sql)}</pre>`;
+      }
+      if (s.sql_result_summary) {
+        if (s.sql_result_summary.error) {
+          html += `❌ SQL 执行失败: ${s.sql_result_summary.error}<br>`;
+        } else {
+          html += `✅ SQL 执行成功,返回 ${s.sql_result_summary.row_count} 行 ${s.sql_result_summary.columns?.length || 0} 列<br>`;
+        }
+      }
+      if (s.chart_path) {
+        html += `<img src="/api/chart/${s.chart_path.split('/').pop()}" alt="chart">`;
+      }
+      if (s.conclusion) {
+        html = renderConclusion(s.conclusion, {}, s.sql, s.chart_path);
+      }
+      addHtml('assistant', html || `正在 ${data.phase} ...`);
+    }
+  } catch (e) {
+    removeThinking();
+    addHtml('system', `❌ 请求失败: ${e.message}`);
+  } finally {
+    isWaiting = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+}
+
+document.getElementById('userInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+
+(async function init() {
+  try {
+    const r = await fetch('/health');
+    const h = await r.json();
+    const pill = document.getElementById('llmPill');
+    pill.textContent = 'LLM: ' + h.llm_provider + (h.is_mock_llm ? ' (mock)' : '');
+    pill.className = 'pill ' + (h.is_mock_llm ? 'mock' : 'live');
+  } catch (e) {
+    document.getElementById('llmPill').textContent = 'LLM: 离线';
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+
+# 数仓 mock 库(30 MB,部署后 server 端重建)
+warehouse/ecommerce.duckdb
+warehouse/ecommerce.duckdb.wal
+
+# 报告/图表(运行时生成,不入库)
+reports/*.png
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 部署产物
+*.log
+/tmp/

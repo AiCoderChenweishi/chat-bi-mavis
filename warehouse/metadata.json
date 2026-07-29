@@ -1,0 +1,1001 @@
+{
+  "warehouse_name": "ecommerce_mock_warehouse",
+  "is_mock": true,
+  "data_range": "2025-01-01 ~ 2026-07-31 (含去年数据,可做同比)",
+  "tables": [
+    {
+      "name": "ads_category_rank",
+      "layer": "ADS",
+      "row_count": 32813,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l2",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "gmv",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "gmv_rank",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "yoy_gmv",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "yoy_pct",
+          "type": "DECIMAL(10,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "类目 GMV 排名",
+        "含同比",
+        "下钻到 L2"
+      ],
+      "note": "指标应用层,直接出报表"
+    },
+    {
+      "name": "ads_conversion_funnel",
+      "layer": "ADS",
+      "row_count": 2314,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "pv_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "浏览"
+        },
+        {
+          "name": "cart_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "加购"
+        },
+        {
+          "name": "order_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "下单"
+        },
+        {
+          "name": "pay_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "支付"
+        },
+        {
+          "name": "pv_to_cart",
+          "type": "DECIMAL(5,4)",
+          "nullable": "YES",
+          "comment": "pv→cart 转化率"
+        },
+        {
+          "name": "cart_to_order",
+          "type": "DECIMAL(5,4)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "order_to_pay",
+          "type": "DECIMAL(5,4)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "转化漏斗",
+        "4 步转化率",
+        "按渠道"
+      ],
+      "note": "指标应用层,直接出报表"
+    },
+    {
+      "name": "ads_coupon_roi",
+      "layer": "ADS",
+      "row_count": 1734,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "coupon_type",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "coupon_amt",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "gmv_driven",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "roi",
+          "type": "DECIMAL(10,2)",
+          "nullable": "YES",
+          "comment": "gmv_driven / coupon_amt"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "券 ROI 直接看",
+        "按券类型拆"
+      ],
+      "note": "指标应用层,直接出报表"
+    },
+    {
+      "name": "ads_gmv_daily",
+      "layer": "ADS",
+      "row_count": 11389,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "gmv",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "order_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "user_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "avg_order_value",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "refund_rate",
+          "type": "DECIMAL(5,4)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "yoy_gmv",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": "去年同期 GMV"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "GMV 主报表",
+        "日粒度",
+        "含同比"
+      ],
+      "note": "指标应用层,直接出报表"
+    },
+    {
+      "name": "ads_user_retention",
+      "layer": "ADS",
+      "row_count": 1504,
+      "fields": [
+        {
+          "name": "register_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "cohort_day",
+          "type": "INTEGER",
+          "nullable": "NO",
+          "comment": "注册后第 N 天"
+        },
+        {
+          "name": "user_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "注册当日用户数"
+        },
+        {
+          "name": "retained_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "第 N 天仍活跃的用户数"
+        },
+        {
+          "name": "retention_rate",
+          "type": "DECIMAL(5,4)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "用户留存",
+        "cohort 分析"
+      ],
+      "note": "指标应用层,直接出报表"
+    },
+    {
+      "name": "dwd_coupon_use",
+      "layer": "DWD",
+      "row_count": 24110,
+      "fields": [
+        {
+          "name": "coupon_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "order_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "coupon_type",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "满减/折扣/现金"
+        },
+        {
+          "name": "coupon_amount",
+          "type": "DECIMAL(10,2)",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "threshold_amount",
+          "type": "DECIMAL(10,2)",
+          "nullable": "YES",
+          "comment": "满减门槛"
+        },
+        {
+          "name": "use_time",
+          "type": "TIMESTAMP",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "券核销明细",
+        "ROI 计算",
+        "券→订单关联"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dwd_product_sku",
+      "layer": "DWD",
+      "row_count": 6000,
+      "fields": [
+        {
+          "name": "sku_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "product_name",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l2",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l3",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "brand",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "price",
+          "type": "DECIMAL(10,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "cost_price",
+          "type": "DECIMAL(10,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "on_shelf_time",
+          "type": "TIMESTAMP",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "商品维表",
+        "类目下钻",
+        "品牌分析"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dwd_trade_order",
+      "layer": "DWD",
+      "row_count": 80000,
+      "fields": [
+        {
+          "name": "order_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "sku_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "大类(服饰/3C/美妆/食品/家电)"
+        },
+        {
+          "name": "category_l2",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "中类"
+        },
+        {
+          "name": "category_l3",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "小类"
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "渠道(APP/H5/小程序/PC)"
+        },
+        {
+          "name": "order_time",
+          "type": "TIMESTAMP",
+          "nullable": "NO",
+          "comment": "下单时间"
+        },
+        {
+          "name": "pay_time",
+          "type": "TIMESTAMP",
+          "nullable": "YES",
+          "comment": "支付时间"
+        },
+        {
+          "name": "finish_time",
+          "type": "TIMESTAMP",
+          "nullable": "YES",
+          "comment": "完成时间"
+        },
+        {
+          "name": "order_status",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "created/paid/finished/refunded/cancelled"
+        },
+        {
+          "name": "pay_amount",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": "实付金额(已扣券/优惠)"
+        },
+        {
+          "name": "original_amount",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": "原价金额"
+        },
+        {
+          "name": "coupon_id",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "使用的券"
+        },
+        {
+          "name": "coupon_amount",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": "券面额"
+        },
+        {
+          "name": "is_new_user",
+          "type": "BOOLEAN",
+          "nullable": "NO",
+          "comment": "是否新客(首单)"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "订单明细分析",
+        "GMV 自由聚合",
+        "新老客拆分"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dwd_traffic_visit",
+      "layer": "DWD",
+      "row_count": 200000,
+      "fields": [
+        {
+          "name": "visit_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "session_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "visit_time",
+          "type": "TIMESTAMP",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "page_type",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "home/category/product/cart/pay"
+        },
+        {
+          "name": "sku_id",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "浏览的商品(若适用)"
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "device",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "UV/PV 流量分析",
+        "漏斗上游",
+        "渠道分布"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dwd_user_login",
+      "layer": "DWD",
+      "row_count": 30000,
+      "fields": [
+        {
+          "name": "login_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "login_time",
+          "type": "TIMESTAMP",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "device",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "ios/android/pc"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "DAU",
+        "留存计算",
+        "用户活跃度"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dwd_user_register",
+      "layer": "DWD",
+      "row_count": 5000,
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "register_time",
+          "type": "TIMESTAMP",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "register_channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "注册来源渠道"
+        },
+        {
+          "name": "age_group",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "年龄段(18-24/25-30/31-40/41-50/50+)"
+        },
+        {
+          "name": "gender",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "M/F/U"
+        },
+        {
+          "name": "city_tier",
+          "type": "VARCHAR",
+          "nullable": "YES",
+          "comment": "一线/新一线/二线/三线/四线及以下"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "用户增量",
+        "注册渠道分析",
+        "cohort 留存起点"
+      ],
+      "note": "原始明细,需自行 join 维表"
+    },
+    {
+      "name": "dws_coupon_effect_day",
+      "layer": "DWS",
+      "row_count": 0,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "coupon_type",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "coupon_amt",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": "券总面额"
+        },
+        {
+          "name": "gmv_driven",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": "券带动 GMV"
+        },
+        {
+          "name": "use_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": "核销次数"
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "券效果日表",
+        "券 ROI"
+      ],
+      "note": "主题宽表,已按日×维度聚合"
+    },
+    {
+      "name": "dws_product_sale_day",
+      "layer": "DWS",
+      "row_count": 0,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "sku_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "sale_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "sale_amt",
+          "type": "DECIMAL(12,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "商品日销",
+        "动销分析",
+        "爆款识别"
+      ],
+      "note": "主题宽表,已按日×维度聚合"
+    },
+    {
+      "name": "dws_trade_user_day",
+      "layer": "DWS",
+      "row_count": 12591,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_type",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": "new/old"
+        },
+        {
+          "name": "category_l1",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "gmv",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "order_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "user_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "refund_amt",
+          "type": "DECIMAL(15,2)",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "refund_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "交易主题",
+        "新老客对比",
+        "渠道×类目"
+      ],
+      "note": "主题宽表,已按日×维度聚合"
+    },
+    {
+      "name": "dws_traffic_channel_day",
+      "layer": "DWS",
+      "row_count": 0,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "channel",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "pv",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "uv",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "click_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "渠道流量日表",
+        "UV 趋势"
+      ],
+      "note": "主题宽表,已按日×维度聚合"
+    },
+    {
+      "name": "dws_user_action_day",
+      "layer": "DWS",
+      "row_count": 0,
+      "fields": [
+        {
+          "name": "stat_date",
+          "type": "DATE",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "user_id",
+          "type": "VARCHAR",
+          "nullable": "NO",
+          "comment": ""
+        },
+        {
+          "name": "pv",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "cart_add",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "fav_add",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "pay_cnt",
+          "type": "INTEGER",
+          "nullable": "YES",
+          "comment": ""
+        },
+        {
+          "name": "is_mock",
+          "type": "BOOLEAN",
+          "nullable": "YES",
+          "comment": ""
+        }
+      ],
+      "use_cases": [
+        "用户行为汇总",
+        "复购率计算"
+      ],
+      "note": "主题宽表,已按日×维度聚合"
+    }
+  ],
+  "layer_priority": [
+    "🥇 优先 ADS: 直接出报表,无聚合",
+    "🥈 次选 DWS: 主题宽表,轻度聚合",
+    "🥉 末选 DWD: 原始明细,自由度高但要自己 join"
+  ]
+}

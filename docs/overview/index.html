@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数据分析 Agent — 项目全景</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --card: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0ebde;
+      --text: #14171e;
+      --text-2: #3a4256;
+      --text-3: #7c7a72;
+      --primary: #2f6f5e;
+      --primary-light: #4a8e7c;
+      --accent: #c97b3f;
+      --warn: #b06367;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Outfit', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 56px 28px 96px;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: left;
+      padding-bottom: 40px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 56px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 16px;
+    }
+    .eyebrow svg { color: var(--primary); }
+    .hero h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 48px;
+      font-weight: 400;
+      line-height: 1.1;
+      margin: 0 0 18px;
+      letter-spacing: -0.01em;
+    }
+    .hero p {
+      font-size: 17px;
+      color: var(--text-2);
+      max-width: 680px;
+      margin: 0 0 28px;
+    }
+    .status-pills {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--card);
+      border: 1px solid var(--line);
+      color: var(--text-2);
+    }
+    .pill.ok { background: #e8f3ee; color: var(--primary); border-color: #c8e0d3; }
+    .pill.warn { background: #fdf3ec; color: var(--accent); border-color: #f3d6bb; }
+    .pill.mock { background: #fae8e9; color: var(--warn); border-color: #f0c8cb; }
+
+    section { margin-bottom: 64px; }
+    h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 28px;
+      font-weight: 400;
+      margin: 0 0 8px;
+      letter-spacing: -0.005em;
+    }
+    h2 .num {
+      display: inline-block;
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .section-sub {
+      color: var(--text-3);
+      font-size: 14px;
+      margin: 0 0 28px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    @media (max-width: 720px) {
+      .grid-2, .grid-4 { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 36px; }
+    }
+
+    .kv { display: grid; grid-template-columns: 130px 1fr; gap: 0; }
+    .kv .row { display: contents; }
+    .kv .k, .kv .v {
+      padding: 10px 0;
+      border-bottom: 1px dashed var(--line-soft);
+    }
+    .kv .k { color: var(--text-3); font-size: 13px; }
+    .kv .v { color: var(--text); font-size: 14px; }
+
+    .stat {
+      padding: 18px 20px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .stat .num {
+      font-size: 32px;
+      font-weight: 600;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+    }
+    .stat .label {
+      font-size: 13px;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+
+    .arch {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+    }
+    .arch-row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 18px;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px dashed var(--line-soft);
+    }
+    .arch-row:last-child { border-bottom: 0; }
+    .arch-tier {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-3);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .arch-blocks { display: flex; flex-wrap: wrap; gap: 8px; }
+    .arch-block {
+      padding: 6px 12px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .arch-block.ads { background: #e8f3ee; border-color: #c8e0d3; color: var(--primary); }
+    .arch-block.dws { background: #fdf3ec; border-color: #f3d6bb; color: var(--accent); }
+    .arch-block.dwd { background: #fae8e9; border-color: #f0c8cb; color: var(--warn); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      align-items: center;
+    }
+    @media (max-width: 880px) {
+      .flow { grid-template-columns: 1fr; }
+    }
+    .node {
+      background: var(--card);
+      border: 1.5px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 8px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .node .title { font-weight: 600; color: var(--text); }
+    .node .sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    .node.user { background: #fff7e6; border-color: #ffd591; }
+    .node.llm { background: #e8f3ee; border-color: #c8e0d3; }
+    .node.data { background: #f0e8fa; border-color: #d4c4ec; }
+    .arrow {
+      text-align: center;
+      color: var(--text-3);
+      font-size: 18px;
+    }
+
+    .bench-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 80px;
+      gap: 12px;
+      align-items: center;
+      padding: 6px 0;
+    }
+    .bench-row .label { font-size: 13px; color: var(--text-2); }
+    .bar-bg {
+      height: 14px;
+      background: var(--line-soft);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--primary-light));
+      border-radius: 6px;
+    }
+    .bench-row .val { font-size: 13px; font-weight: 600; color: var(--text); text-align: right; font-family: 'JetBrains Mono', monospace; }
+
+    pre {
+      background: #1a1f2e;
+      color: #e6e6e6;
+      padding: 14px 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+    .code-comment { color: #6b7280; }
+    .code-keyword { color: #c4a5f7; }
+    .code-str { color: #86efac; }
+
+    footer {
+      margin-top: 80px;
+      padding-top: 32px;
+      border-top: 1px solid var(--line);
+      color: var(--text-3);
+      font-size: 13px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="hero">
+      <div class="eyebrow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-5"/>
+        </svg>
+        AGENTIC WORKFLOW · v0.1
+      </div>
+      <h1>数据分析 Agent:<br>说一句需求,自动跑完澄清→理解→出图→结论</h1>
+      <p>4 个 LLM agent 协作 + DuckDB mock 数仓 + FastAPI Chat UI。<br>支持 5 类业务场景(GMV/复购/漏斗/券 ROI/留存),端到端 5/5 通过。</p>
+      <div class="status-pills">
+        <span class="pill ok">✓ 5/5 e2e 通过</span>
+        <span class="pill ok">✓ 41 万行 mock 数仓</span>
+        <span class="pill ok">✓ 4 agent prompt 打磨完</span>
+        <span class="pill warn">⚠ mock 数据演示</span>
+        <span class="pill">📦 DuckDB 1.5.5</span>
+      </div>
+    </div>
+
+    <section>
+      <h2><span class="num">01</span>整体架构</h2>
+      <p class="section-sub">用户输入 → 多轮反问澄清 → 自动跑数仓理解+SQL+执行+图表+结论</p>
+
+      <div class="flow">
+        <div class="node user">
+          <div class="title">用户</div>
+          <div class="sub">"最近 30 天 GMV"</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node llm">
+          <div class="title">需求澄清</div>
+          <div class="sub">多轮反问</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node llm">
+          <div class="title">数仓理解</div>
+          <div class="sub">选 ADS/DWS/DWD</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node llm">
+          <div class="title">SQL 生成</div>
+          <div class="sub">DuckDB 5 项自检</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node data">
+          <div class="title">执行+图表</div>
+          <div class="sub">matplotlib</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node llm">
+          <div class="title">结论撰写</div>
+          <div class="sub">业务报告</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 24px;">
+        <div class="kv">
+          <div class="row"><div class="k">状态机</div><div class="v">clarifying → warehouse_understanding → sql_generating → executing → visualizing → writing_conclusion → done</div></div>
+          <div class="row"><div class="k">澄清上限</div><div class="v">3 轮反问,槽位齐或用户叫停即停</div></div>
+          <div class="row"><div class="k">选表优先级</div><div class="v">🥇 ADS 直出 → 🥈 DWS 主题宽表 → 🥉 DWD 明细 join</div></div>
+          <div class="row"><div class="k">失败兜底</div><div class="v">LLM 返 None / SQL 失败 → 规则化 mock + fallback SQL</div></div>
+          <div class="row"><div class="k">LLM provider</div><div class="v">minimax (优先) → deepseek → mock 兜底</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">02</span>数仓分层(17 张表 / 41 万行)</h2>
+      <p class="section-sub">DWD 原始明细 → DWS 主题宽表 → ADS 指标应用。三层结构给 agent 明确选表路径。</p>
+
+      <div class="arch">
+        <div class="arch-row">
+          <span class="arch-tier">ADS</span>
+          <div class="arch-blocks">
+            <span class="arch-block ads">ads_gmv_daily · 11.5k</span>
+            <span class="arch-block ads">ads_category_rank · 33k</span>
+            <span class="arch-block ads">ads_coupon_roi · 1.7k</span>
+            <span class="arch-block ads">ads_conversion_funnel · 2.3k</span>
+            <span class="arch-block ads">ads_user_retention · 1.5k</span>
+          </div>
+        </div>
+        <div class="arch-row">
+          <span class="arch-tier">DWS</span>
+          <div class="arch-blocks">
+            <span class="arch-block dws">dws_trade_user_day · 12.5k</span>
+            <span class="arch-block dws">dws_user_action_day</span>
+            <span class="arch-block dws">dws_product_sale_day</span>
+            <span class="arch-block dws">dws_coupon_effect_day</span>
+            <span class="arch-block dws">dws_traffic_channel_day</span>
+          </div>
+        </div>
+        <div class="arch-row">
+          <span class="arch-tier">DWD</span>
+          <div class="arch-blocks">
+            <span class="arch-block dwd">dwd_trade_order · 80k</span>
+            <span class="arch-block dwd">dwd_user_register · 5k</span>
+            <span class="arch-block dwd">dwd_user_login · 30k</span>
+            <span class="arch-block dwd">dwd_product_sku · 6k</span>
+            <span class="arch-block dwd">dwd_coupon_use · 24k</span>
+            <span class="arch-block dwd">dwd_traffic_visit · 200k</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">
+        <div class="card">
+          <div style="font-size: 13px; color: var(--text-3); margin-bottom: 8px;">数据时间范围</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: var(--text);">2025-01-01 → 2026-07-31</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 4px;">共 578 天,含去年 30 天可做同比</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; color: var(--text-3); margin-bottom: 8px;">Mock 标注</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--warn);">is_mock = TRUE</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 4px;">每行硬编码标识,SQL 强制带过滤,结论强制写局限</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">03</span>4 个 Agent 角色</h2>
+      <p class="section-sub">每个 agent 有独立 system prompt + 严格 JSON schema 输入输出,失败 fallback 规则化。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <div style="font-weight: 600;">01 需求澄清</div>
+          </div>
+          <div style="font-size: 13px; color: var(--text-2);">多轮反问把模糊需求拆成 4 槽位</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 6px; font-family: 'JetBrains Mono', monospace;">time_range / dimensions / metrics / comparison</div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+            <div style="font-weight: 600;">02 数仓理解</div>
+          </div>
+          <div style="font-size: 13px; color: var(--text-2);">看元数据,选表 + 定字段 + 标口径 + 标风险</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 6px; font-family: 'JetBrains Mono', monospace;">selected_tables / fields / filters / risks / confidence</div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+            </svg>
+            <div style="font-weight: 600;">03 SQL 生成</div>
+          </div>
+          <div style="font-size: 13px; color: var(--text-2);">DuckDB SQL,5 项自检必过</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 6px; font-family: 'JetBrains Mono', monospace;">syntax / fields / joins / time / mock_filter</div>
+        </div>
+
+        <div class="card">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <div style="font-weight: 600;">04 结论撰写</div>
+          </div>
+          <div style="font-size: 13px; color: var(--text-2);">摘要 + 关键发现 + 业务建议 + 数据局限 + 追问方向</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-top: 6px; font-family: 'JetBrains Mono', monospace;">summary / findings / actions / limits / follow_ups</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">04</span>5 个 e2e 场景全部通过</h2>
+      <p class="section-sub">每场景:多轮对话 → 选表 → SQL 跑出真实数据 → 图表渲染</p>
+
+      <div class="card" style="margin-bottom: 16px;">
+        <div class="bench-row">
+          <span class="label">GMV 总体分析</span>
+          <div class="bar-bg"><div class="bar-fill" style="width: 100%"></div></div>
+          <span class="val">5 行 / 5 列</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-3); margin: 4px 0 16px;">ads_gmv_daily · 5 品类 GMV 排名 + 同比 ✓</div>
+
+        <div class="bench-row">
+          <span class="label">复购率分析</span>
+          <div class="bar-bg"><div class="bar-fill" style="width: 20%"></div></div>
+          <span class="val">1 行 / 3 列</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-3); margin: 4px 0 16px;">dwd_trade_order · 复购率单值 + 总用户/复购用户 ✓</div>
+
+        <div class="bench-row">
+          <span class="label">转化漏斗</span>
+          <div class="bar-bg"><div class="bar-fill" style="width: 80%"></div></div>
+          <span class="val">4 行 / 8 列</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-3); margin: 4px 0 16px;">ads_conversion_funnel · 4 渠道 4 步转化率 ✓</div>
+
+        <div class="bench-row">
+          <span class="label">券 ROI</span>
+          <div class="bar-bg"><div class="bar-fill" style="width: 60%"></div></div>
+          <span class="val">3 行 / 4 列</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-3); margin: 4px 0 16px;">ads_coupon_roi · 3 种券 ROI + 带动 GMV ✓</div>
+
+        <div class="bench-row">
+          <span class="label">用户留存</span>
+          <div class="bar-bg"><div class="bar-fill" style="width: 60%"></div></div>
+          <span class="val">3 行 / 4 列</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-3);">ads_user_retention · 1/7/30 日 cohort 留存 ✓</div>
+      </div>
+
+      <div class="grid-4">
+        <div class="stat">
+          <div class="num">5/5</div>
+          <div class="label">场景通过率</div>
+        </div>
+        <div class="stat">
+          <div class="num">~12s</div>
+          <div class="label">单场景耗时(含 LLM)</div>
+        </div>
+        <div class="stat">
+          <div class="num">3s</div>
+          <div class="label">数仓 seed 耗时</div>
+        </div>
+        <div class="stat">
+          <div class="num">16</div>
+          <div class="label">生成图表数</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">05</span>mock 数仓数据规模</h2>
+      <p class="section-sub">seed 脚本 3 秒灌 41 万行,业务线覆盖订单/用户/商品/券/流量。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <canvas id="rowChart" height="220"></canvas>
+        </div>
+        <div class="card">
+          <div class="kv">
+            <div class="row"><div class="k">总行数</div><div class="v">~ 410,000</div></div>
+            <div class="row"><div class="k">用户数</div><div class="v">5,000 (注册均匀分布 18 个月)</div></div>
+            <div class="row"><div class="k">商品 SKU</div><div class="v">6,000 (5 大类 × 20 中类 × 3 小类 × 20)</div></div>
+            <div class="row"><div class="k">订单数</div><div class="v">80,000 (60% 支付/退单/取消)</div></div>
+            <div class="row"><div class="k">流量 PV</div><div class="v">200,000 (浏览/类目/详情/加购/支付)</div></div>
+            <div class="row"><div class="k">渠道</div><div class="v">APP / H5 / 微信小程序 / PC</div></div>
+            <div class="row"><div class="k">设备</div><div class="v">iOS / Android / PC</div></div>
+            <div class="row"><div class="k">seed 耗时</div><div class="v">3.09 秒 (SQL bulk + generate_series)</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2><span class="num">06</span>关键 SQL 示例(复购率)</h2>
+      <p class="section-sub">agent 生成的真实可执行 SQL,5 项自检全过</p>
+
+<pre><span class="code-comment">-- 复购率: 近 30 天下过 ≥2 单的用户 / 总下单用户</span>
+<span class="code-keyword">WITH</span> user_orders <span class="code-keyword">AS</span> (
+    <span class="code-keyword">SELECT</span>
+        user_id,
+        <span class="code-keyword">COUNT</span>(<span class="code-keyword">DISTINCT</span> order_id) <span class="code-keyword">AS</span> order_cnt
+    <span class="code-keyword">FROM</span> dwd_trade_order
+    <span class="code-keyword">WHERE</span> pay_time >= <span class="code-keyword">CURRENT_DATE</span> - <span class="code-keyword">INTERVAL</span> 30 <span class="code-keyword">DAY</span>
+      <span class="code-keyword">AND</span> order_status <span class="code-keyword">IN</span> (<span class="code-str">'paid'</span>, <span class="code-str">'finished'</span>)
+      <span class="code-keyword">AND</span> is_mock = <span class="code-keyword">TRUE</span>
+    <span class="code-keyword">GROUP BY</span> user_id
+)
+<span class="code-keyword">SELECT</span>
+    <span class="code-keyword">COUNT</span>(*) <span class="code-keyword">AS</span> total_buyer,
+    <span class="code-keyword">SUM</span>(<span class="code-keyword">CASE WHEN</span> order_cnt >= 2 <span class="code-keyword">THEN</span> 1 <span class="code-keyword">ELSE</span> 0 <span class="code-keyword">END</span>) <span class="code-keyword">AS</span> repeat_buyer,
+    <span class="code-keyword">ROUND</span>(<span class="code-keyword">SUM</span>(<span class="code-keyword">CASE WHEN</span> order_cnt >= 2 <span class="code-keyword">THEN</span> 1 <span class="code-keyword">ELSE</span> 0 <span class="code-keyword">END</span>) * 1.0
+          / <span class="code-keyword">NULLIF</span>(<span class="code-keyword">COUNT</span>(*), 0), 4) <span class="code-keyword">AS</span> repurchase_rate
+<span class="code-keyword">FROM</span> user_orders;</pre>
+    </section>
+
+    <section>
+      <h2><span class="num">07</span>踩过的坑(DuckDB 细节)</h2>
+      <p class="section-sub">开发中遇到,记录防止再踩</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ DuckDB 没有 ELT()</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">用数组字面量取下标: ['A','B','C'][n % 3 + 1]</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ CHAR(N) 不接受算术</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">改用 CHR(CAST(N AS INTEGER))</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ UNNEST 只能接 1 个 array</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">多 array → 拆 3 个 subquery 再 cross join</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ DECIMAL(6,2) 装不下 33992%</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">同比/ROI 字段给 DECIMAL(10,2) 余量</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ LLM 返回 None 引爆 server</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">多层 try/except + data is None 兜底到 mock</div>
+        </div>
+        <div class="card">
+          <div style="font-size: 13px; font-weight: 600; color: var(--warn); margin-bottom: 6px;">❌ SQL 注释 -- 开头被拦截</div>
+          <div style="font-size: 13px; color: var(--text-2); font-family: 'JetBrains Mono', monospace;">判 SELECT 前先 strip 掉 -- 注释行</div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      data-analyst-agent · v0.1 · 2026-07-29 · DuckDB 1.5.5 + minimax LLM + FastAPI + matplotlib
+    </footer>
+  </div>
+
+  <script>
+    new Chart(document.getElementById('rowChart'), {
+      type: 'bar',
+      data: {
+        labels: ['dwd_traffic_visit', 'dwd_trade_order', 'dwd_user_login', 'dwd_coupon_use', 'dwd_product_sku', 'dwd_user_register', 'ads_category_rank', 'dws_trade_user_day', 'ads_gmv_daily', 'ads_conversion_funnel', 'ads_coupon_roi', 'ads_user_retention'],
+        datasets: [{
+          label: '行数',
+          data: [200000, 80000, 30000, 24000, 6000, 5000, 33000, 12500, 11500, 2300, 1700, 1500],
+          backgroundColor: ['#b06367', '#b06367', '#b06367', '#b06367', '#b06367', '#b06367', '#c97b3f', '#2f6f5e', '#2f6f5e', '#2f6f5e', '#2f6f5e', '#2f6f5e'],
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ctx.parsed.y.toLocaleString() + ' 行'
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { font: { family: 'JetBrains Mono', size: 10 }, maxRotation: 60, minRotation: 60 }, grid: { display: false } },
+          y: { type: 'logarithmic', ticks: { font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: 'rgba(0,0,0,0.04)' } }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
