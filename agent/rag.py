@@ -1,23 +1,25 @@
 """
-v0.4 RAG — ES 8 混合检索 (smartcn BM25 + bge 向量 + RRF 融合)
+v0.4.1 RAG — faiss-cpu + sqlite FTS5 + jieba + Python RRF (零运维, 同进程)
 
-设计:
-  - 存储: Elasticsearch 8.18 (sandbox / 8.153 自部署)
-  - 向量: bge-small-zh-v1.5 ONNX (512 维, Xenova 转)
-  - 中文分词: smartcn (ES 自带插件)
-  - 混合检索: BM25 (knn 之前默认) + knn (dense_vector) + RRF 融合 (ES 8.8+ native)
-  - sqlite 保留作 backup (跟 ES 双写)
+设计 (替换之前 ES 8 方案, 治本 ES 装不下 / OOM / 端口问题):
+  - 向量: faiss-cpu IndexFlatIP (内积, 跟 cosine 等效, 反正 vec 都 L2 normalized)
+  - 中文分词: jieba (精准模式)
+  - BM25: sqlite FTS5 (virtual table, Porter stemmer, unicode61 token)
+  - 混合: BM25 (sqlite FTS5) + knn (faiss) + Python RRF 融合 (跟 ES RRF 等效)
+  - 持久化:
+    - sqlite kb_entries (source of truth) + kb_entries_fts (FTS5 虚表)
+    - data/faiss.index (faiss 向量索引, 二进制, 加载 < 100ms)
+    - data/faiss_ids.json (id 跟 faiss idx 映射)
+  - 全部同 chat-bi-mavis 进程, 1G 内存够, 零 systemd 运维
 
-依赖: onnxruntime, tokenizers, numpy (已装)
+依赖: faiss-cpu, jieba, numpy
 """
 import os
 import json
 import time
 import logging
 import threading
-import urllib.request
-import urllib.error
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 import numpy as np
 
@@ -26,17 +28,21 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # Config
 # ============================================================
-ES_URL = os.environ.get("CHAT_BI_ES_URL", "http://127.0.0.1:9200")
-ES_INDEX = os.environ.get("CHAT_BI_ES_INDEX", "chat-bi-kb")
-ES_USER = os.environ.get("CHAT_BI_ES_USER", "")  # 空 = 无 auth
-ES_PASS = os.environ.get("CHAT_BI_ES_PASS", "")
-
+ES_URL = os.environ.get("CHAT_BI_ES_URL", "")  # 兼容老 config, 空 = 不走 ES
 EMBED_MODEL_DIR = os.environ.get(
     "CHAT_BI_EMBED_DIR",
     os.path.join(os.path.dirname(__file__), "..", "models", "bge-small-zh-v1.5"),
 )
 EMBED_DIMS = 512
 EMBED_MAX_LEN = 512
+
+# faiss 索引路径 (跟 sqlite KB 同目录)
+KB_DIR = os.environ.get(
+    "DATA_ANALYST_KB_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
+FAISS_INDEX_PATH = os.path.join(KB_DIR, "faiss.index")
+FAISS_IDS_PATH = os.path.join(KB_DIR, "faiss_ids.json")
 
 
 # ============================================================
@@ -125,125 +131,160 @@ def embed_text(text: str) -> Optional[List[float]]:
 
 
 # ============================================================
-# ES HTTP 客户端 (免 elasticsearch 依赖, 走 urllib)
+# 中文分词 (jieba, 给 FTS5 用)
 # ============================================================
-def _es_request(method: str, path: str, body: Optional[dict] = None, timeout: int = 10) -> Tuple[int, dict]:
-    """发 ES HTTP 请求, 返 (status_code, json_body)"""
-    url = f"{ES_URL}{path}"
-    data = None
-    headers = {"Content-Type": "application/json"}
-    if ES_USER and ES_PASS:
-        import base64
-        auth = base64.b64encode(f"{ES_USER}:{ES_PASS}".encode()).decode()
-        headers["Authorization"] = f"Basic {auth}"
-    if body is not None:
-        data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-            try:
-                return resp.status, json.loads(raw) if raw else {}
-            except json.JSONDecodeError:
-                return resp.status, {"raw": raw}
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8", errors="ignore")
+_jieba_initialized = False
+
+
+def _tokenize_chinese(text: str) -> str:
+    """jieba 精准分词, 用空格 join (FTS5 需要空格分词)"""
+    global _jieba_initialized
+    if not _jieba_initialized:
         try:
-            return e.code, json.loads(raw) if raw else {}
-        except json.JSONDecodeError:
-            return e.code, {"raw": raw, "error": str(e)}
+            import jieba
+            jieba.setLogLevel(logging.WARNING)  # 静默 init log
+            # 强制触发初始化 (第一次调用才 init, 在 thread 里会卡)
+            jieba.lcut("init")
+            _jieba_initialized = True
+        except ImportError:
+            logger.warning("jieba 未装, 用空格 split 降级")
+            return text
+    try:
+        import jieba
+        tokens = jieba.lcut_for_search(text)  # 搜索模式: 切得更细, 召回更好
+        # 过滤: 1 字符 + 纯标点 + 纯数字 (BM25 不友好)
+        out = []
+        for t in tokens:
+            t = t.strip()
+            if len(t) < 2:
+                continue
+            if not any('\u4e00' <= c <= '\u9fff' for c in t):  # 必须含至少 1 个中文
+                continue
+            out.append(t)
+        return " ".join(out)
     except Exception as e:
-        logger.error(f"ES 请求失败 {method} {url}: {e}")
-        return 0, {"error": str(e)}
+        logger.warning(f"jieba 分词失败: {e}")
+        return text
 
 
 # ============================================================
-# 索引管理
+# Faiss 索引管理 (单例, 加锁)
 # ============================================================
-def ensure_index() -> bool:
-    """确保 chat-bi-kb 索引存在 (没有就建)"""
-    code, body = _es_request("GET", f"/{ES_INDEX}")
-    if code == 200:
+_faiss_index = None
+_faiss_ids: List[int] = []  # faiss idx → KB id 映射
+_faiss_lock = threading.RLock()
+
+
+def _load_faiss_index() -> bool:
+    """加载或初始化 faiss 索引 (线程安全)"""
+    global _faiss_index, _faiss_ids
+    if _faiss_index is not None:
         return True
-    if code == 404:
-        # 建索引
-        mapping = {
-            "settings": {
-                "number_of_shards": 1,
-                "number_of_replicas": 0,
-            },
-            "mappings": {
-                "properties": {
-                    "id": {"type": "integer"},
-                    "category": {"type": "keyword"},
-                    "title": {"type": "text", "analyzer": "smartcn", "search_analyzer": "smartcn"},
-                    "content": {"type": "text", "analyzer": "smartcn", "search_analyzer": "smartcn"},
-                    "source": {"type": "keyword"},
-                    "tags": {"type": "keyword"},
-                    "confidence": {"type": "float"},
-                    "created_at": {"type": "date"},
-                    "updated_at": {"type": "date"},
-                    "title_vector": {"type": "dense_vector", "dims": EMBED_DIMS, "index": True, "similarity": "cosine"},
-                    "content_vector": {"type": "dense_vector", "dims": EMBED_DIMS, "index": True, "similarity": "cosine"},
-                }
-            }
-        }
-        code, body = _es_request("PUT", f"/{ES_INDEX}", body=mapping)
-        if code in (200, 201):
-            logger.info(f"chat-bi-kb 索引建成功")
+    with _faiss_lock:
+        if _faiss_index is not None:
             return True
-        logger.error(f"建索引失败: {code} {body}")
-        return False
-    logger.error(f"检查索引失败: {code} {body}")
-    return False
+        try:
+            import faiss
+        except ImportError:
+            logger.error("faiss-cpu 未装")
+            return False
+        os.makedirs(KB_DIR, exist_ok=True)
+        if os.path.exists(FAISS_INDEX_PATH) and os.path.exists(FAISS_IDS_PATH):
+            try:
+                _faiss_index = faiss.read_index(FAISS_INDEX_PATH)
+                with open(FAISS_IDS_PATH, "r", encoding="utf-8") as f:
+                    _faiss_ids = json.load(f)
+                logger.info(f"faiss 索引加载成功, {len(_faiss_ids)} 条")
+                return True
+            except Exception as e:
+                logger.error(f"faiss 索引加载失败, 重建: {e}")
+        # 初始化空索引
+        _faiss_index = faiss.IndexFlatIP(EMBED_DIMS)
+        _faiss_ids = []
+        return True
+
+
+def _save_faiss_index():
+    """持久化 (加锁)"""
+    with _faiss_lock:
+        try:
+            import faiss
+            faiss.write_index(_faiss_index, FAISS_INDEX_PATH)
+            with open(FAISS_IDS_PATH, "w", encoding="utf-8") as f:
+                json.dump(_faiss_ids, f, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"faiss 索引保存失败: {e}")
 
 
 # ============================================================
 # CRUD
 # ============================================================
 def index_kb_entry(entry: Dict[str, Any]) -> bool:
-    """把 KB entry 写 ES (1 条), title + content 都 embed"""
+    """
+    写 faiss 索引 + (调用方写 sqlite + FTS5).
+    注意: sqlite 跟 FTS5 由 knowledge_base.py 管理, 这里只管 faiss.
+    """
+    if not _load_faiss_index():
+        return False
     entry_id = entry.get("id")
     if entry_id is None:
-        logger.error("entry 缺 id")
         return False
     title = entry.get("title", "") or ""
     content = entry.get("content", "") or ""
-    # embed (title 跟 content 各一次, 让两种查询都能命中)
-    title_vec = embed_text(title) or [0.0] * EMBED_DIMS
-    content_vec = embed_text(content[:1000]) or [0.0] * EMBED_DIMS  # 截断避免超长
-    doc = {
-        "id": entry_id,
-        "category": entry.get("category", "洞察"),
-        "title": title,
-        "content": content,
-        "source": entry.get("source", "manual"),
-        "tags": entry.get("tags", []),
-        "confidence": entry.get("confidence", 0.8),
-        "created_at": entry.get("created_at"),
-        "updated_at": entry.get("updated_at"),
-        "title_vector": title_vec,
-        "content_vector": content_vec,
-    }
-    # refresh=wait_for 让后续 search 立刻可见 (KB 量小可接受)
-    code, body = _es_request("PUT", f"/{ES_INDEX}/_doc/{entry_id}?refresh=wait_for", body=doc, timeout=15)
-    if code in (200, 201):
-        logger.info(f"KB #{entry_id} 写 ES 成功")
-        return True
-    logger.error(f"KB #{entry_id} 写 ES 失败: {code} {body}")
-    return False
+    title_vec = embed_text(title)
+    content_vec = embed_text(content[:1000])
+    if title_vec is None and content_vec is None:
+        return False
+    # 串成 (1, 512) — 用 content_vec 为主, title 跟 content 拼一起再 embed 也行
+    # 实际: 用 content 完整 emb, 同时把 title 加权 (1.5x 重要)
+    if title_vec is None:
+        title_vec = [0.0] * EMBED_DIMS
+    if content_vec is None:
+        content_vec = [0.0] * EMBED_DIMS
+    # 加权: title 1.5x
+    combined = (np.array(title_vec) * 1.5 + np.array(content_vec)) / 2.5
+    norm = np.linalg.norm(combined)
+    if norm > 0:
+        combined = combined / norm
+    vec = combined.astype(np.float32).reshape(1, EMBED_DIMS)
+
+    with _faiss_lock:
+        import faiss
+        # 检查是否已存在
+        if entry_id in _faiss_ids:
+            # 删旧的
+            old_idx = _faiss_ids.index(entry_id)
+            _faiss_index.remove_ids(np.array([old_idx], dtype=np.int64))
+            _faiss_ids.pop(old_idx)
+        _faiss_index.add(vec)
+        _faiss_ids.append(entry_id)
+        _save_faiss_index()
+    return True
 
 
 def delete_kb_entry(entry_id: int) -> bool:
-    code, body = _es_request("DELETE", f"/{ES_INDEX}/_doc/{entry_id}?refresh=wait_for", timeout=10)
-    if code in (200, 201, 404):
-        return True
-    logger.error(f"删 KB #{entry_id} 失败: {code} {body}")
-    return False
+    if not _load_faiss_index():
+        return False
+    with _faiss_lock:
+        if entry_id not in _faiss_ids:
+            return True  # 不存在也算成功
+        old_idx = _faiss_ids.index(entry_id)
+        _faiss_index.remove_ids(np.array([old_idx], dtype=np.int64))
+        _faiss_ids.pop(old_idx)
+        _save_faiss_index()
+    return True
 
 
 def reindex_all(entries: List[Dict[str, Any]]) -> Tuple[int, int]:
-    """从 sqlite 灌 ES (全量重灌, 用于首次启动 + sqlite 跟 ES 不一致)"""
+    """全量重建 faiss 索引 (从 sqlite 灌)"""
+    global _faiss_index, _faiss_ids
+    if not _load_faiss_index():
+        return 0, 0
+    with _faiss_lock:
+        import faiss
+        # 清空
+        _faiss_index = faiss.IndexFlatIP(EMBED_DIMS)
+        _faiss_ids = []
     ok, fail = 0, 0
     for e in entries:
         if index_kb_entry(e):
@@ -254,57 +295,100 @@ def reindex_all(entries: List[Dict[str, Any]]) -> Tuple[int, int]:
 
 
 # ============================================================
-# 检索 — 混合 (BM25 smartcn + knn 向量 + RRF 融合)
+# 检索
 # ============================================================
+def bm25_search(query: str, top_k: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    BM25 检索 (走 sqlite FTS5).
+    调用方传 KnowledgeBase 引用 (避免循环 import).
+    """
+    from .knowledge_base import get_kb
+    kb = get_kb()
+    return kb.search_fts5(query, limit=top_k, category=category)
+
+
+def knn_search(query_vec: List[float], top_k: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """faiss 向量检索, 返 (id, score) 列表"""
+    if not _load_faiss_index():
+        return []
+    if not _faiss_ids:
+        return []
+    import faiss
+    vec = np.array([query_vec], dtype=np.float32)
+    # 搜
+    scores, idxs = _faiss_index.search(vec, min(top_k, len(_faiss_ids)))
+    results: List[Dict[str, Any]] = []
+    for score, idx in zip(scores[0], idxs[0]):
+        if idx < 0 or idx >= len(_faiss_ids):
+            continue
+        kb_id = _faiss_ids[idx]
+        results.append({"id": kb_id, "score": float(score)})
+    # 跟 sqlite join 拿 entry
+    if results:
+        from .knowledge_base import get_kb
+        kb = get_kb()
+        for r in results:
+            entry = kb.get(r["id"])
+            if entry:
+                r.update({
+                    "category": entry.category,
+                    "title": entry.title,
+                    "content": entry.content,
+                    "source": entry.source,
+                    "tags": entry.tags,
+                    "confidence": entry.confidence,
+                    "created_at": entry.created_at,
+                })
+                # category 过滤
+                if category and entry.category != category:
+                    r["_filter_out"] = True
+        results = [r for r in results if not r.get("_filter_out")]
+    return results
+
+
 def hybrid_search(
     query: str,
     top_k: int = 5,
     category: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
-    混合检索: BM25 (smartcn) + knn 向量, Python 端 RRF 融合
-    (ES native rank.rrf 是 enterprise license 限定, basic license 用不了)
-
-    RRF 公式: rrf_score(d) = sum( 1 / (rank_constant + rank_i(d)) ) for each ranker
+    混合检索: BM25 (sqlite FTS5) + faiss knn + Python RRF 融合
+    (跟之前 ES RRF 等效, 不用 enterprise license)
     """
     if not query or not query.strip():
         return []
-    RRF_K = 60  # rank_constant (跟 ES RRF 默认一致)
-    N = max(top_k * 4, 20)  # 每个 ranker 取 N 条, 留给 RRF 融合 (召回池放大)
+    RRF_K = 60
+    N = max(top_k * 4, 20)  # 每个 ranker 取 N 条, 留给 RRF 融合
 
-    # ranker 1: BM25 (smartcn)
-    bm25_hits = _search_bm25(query, N, category)
-    # ranker 2: knn 向量 (content_vector)
-    knn_hits = []
+    # ranker 1: BM25 (FTS5)
+    bm25_hits = bm25_search(query, top_k=N, category=category)
+    # ranker 2: faiss knn
     query_vec = embed_text(query)
+    knn_hits = []
     if query_vec is not None:
-        knn_hits = _search_knn(query_vec, N, category)
+        knn_hits = knn_search(query_vec, top_k=N, category=category)
 
-    # 各自按 ES 返的 _score 排序, 取 rank
-    bm25_ranked = sorted(bm25_hits, key=lambda x: x.get("score", 0), reverse=True)
-    knn_ranked = sorted(knn_hits, key=lambda x: x.get("score", 0), reverse=True)
-
-    # 端: fallback (任何一个 list 空, 退化为另一个)
-    if not bm25_ranked:
-        return knn_ranked[:top_k]
-    if not knn_ranked:
-        return bm25_ranked[:top_k]
+    # 端: fallback
+    if not bm25_hits:
+        return knn_hits[:top_k]
+    if not knn_hits:
+        return bm25_hits[:top_k]
 
     # 算 RRF 分数
-    rrf_scores: Dict[Any, float] = {}
-    entry_cache: Dict[Any, Dict[str, Any]] = {}
+    rrf_scores: Dict[int, float] = {}
+    entry_cache: Dict[int, Dict[str, Any]] = {}
 
-    for rank, e in enumerate(bm25_ranked):
+    for rank, e in enumerate(bm25_hits):
         key = e["id"]
         rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (RRF_K + rank + 1)
         entry_cache[key] = e
 
-    for rank, e in enumerate(knn_ranked):
+    for rank, e in enumerate(knn_hits):
         key = e["id"]
         rrf_scores[key] = rrf_scores.get(key, 0) + 1 / (RRF_K + rank + 1)
-        entry_cache[key] = e
+        if key not in entry_cache:
+            entry_cache[key] = e
 
-    # 按 RRF 分数排序
     sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
     out: List[Dict[str, Any]] = []
     for k in sorted_keys[:top_k]:
@@ -314,173 +398,22 @@ def hybrid_search(
     return out
 
 
-def _search_bm25(query: str, size: int, category: Optional[str] = None) -> List[Dict[str, Any]]:
-    """BM25 子检索, 返 _score 原始分数"""
-    body: Dict[str, Any] = {
-        "size": size,
-        "query": {
-            "multi_match": {
-                "query": query,
-                "fields": ["title^2", "content"],
-                "type": "best_fields",
-                "analyzer": "smartcn",
-            }
-        },
-    }
-    if category:
-        body["query"] = {"bool": {"must": [body["query"]], "filter": [{"term": {"category": category}}]}}
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body=body, timeout=10)
-    if code != 200:
-        return []
-    return [_hit_to_entry(h) for h in resp.get("hits", {}).get("hits", [])]
-
-
-def _search_knn(query_vec: List[float], size: int, category: Optional[str] = None) -> List[Dict[str, Any]]:
-    """knn 子检索, 返 _score (cosine similarity)"""
-    knn_clause: Dict[str, Any] = {
-        "field": "content_vector",
-        "query_vector": query_vec,
-        "k": size,
-        "num_candidates": max(size * 4, 50),
-    }
-    body: Dict[str, Any] = {
-        "size": size,
-        "knn": knn_clause,
-    }
-    if category:
-        body["knn"]["filter"] = [{"term": {"category": category}}]
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body=body, timeout=10)
-    if code != 200:
-        logger.warning(f"knn 检索失败: {code} {resp}")
-        return []
-    return [_hit_to_entry(h) for h in resp.get("hits", {}).get("hits", [])]
-
-
-def bm25_only_search(query: str, top_k: int = 5, category: Optional[str] = None) -> List[Dict[str, Any]]:
-    """降级: embed 失败时走纯 BM25"""
-    body: Dict[str, Any] = {
-        "size": top_k,
-        "query": {
-            "multi_match": {
-                "query": query,
-                "fields": ["title^2", "content"],
-                "type": "best_fields",
-                "analyzer": "smartcn",
-            }
-        },
-    }
-    if category:
-        body["query"] = {"bool": {"must": [body["query"]], "filter": [{"term": {"category": category}}]}}
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body=body, timeout=10)
-    if code != 200:
-        return []
-    hits = resp.get("hits", {}).get("hits", [])
-    return [_hit_to_entry(h) for h in hits]
-
-
-def _hit_to_entry(hit: Dict[str, Any]) -> Dict[str, Any]:
-    src = hit.get("_source", {})
-    return {
-        "id": src.get("id", hit.get("_id")),
-        "category": src.get("category", ""),
-        "title": src.get("title", ""),
-        "content": src.get("content", ""),
-        "source": src.get("source", ""),
-        "tags": src.get("tags", []),
-        "confidence": src.get("confidence", 0.0),
-        "created_at": src.get("created_at"),
-        "score": hit.get("_score"),
-    }
-
-
 # ============================================================
-# 跟 sqlite 兼容的列表/统计 (UI 用, 跟 ES 走)
-# ============================================================
-def list_recent(limit: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
-    body: Dict[str, Any] = {
-        "size": limit,
-        "sort": [{"updated_at": {"order": "desc", "missing": "_last"}}],
-    }
-    if category:
-        body["query"] = {"term": {"category": category}}
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body=body, timeout=10)
-    if code != 200:
-        return []
-    hits = resp.get("hits", {}).get("hits", [])
-    return [_hit_to_entry(h) for h in hits]
-
-
-def search_text(query: str, limit: int = 10, category: Optional[str] = None) -> List[Dict[str, Any]]:
-    """跟 sqlite 的 search() 接口一致 — UI 搜索框用, 走 BM25 (快 + 简单)"""
-    return bm25_only_search(query, limit, category)
-
-
-def get_entry(entry_id: int) -> Optional[Dict[str, Any]]:
-    code, resp = _es_request("GET", f"/{ES_INDEX}/_doc/{entry_id}")
-    if code != 200 or not resp.get("found"):
-        return None
-    src = resp.get("_source", {})
-    return {
-        "id": src.get("id", entry_id),
-        "category": src.get("category", ""),
-        "title": src.get("title", ""),
-        "content": src.get("content", ""),
-        "source": src.get("source", ""),
-        "tags": src.get("tags", []),
-        "confidence": src.get("confidence", 0.0),
-        "created_at": src.get("created_at"),
-        "updated_at": src.get("updated_at"),
-    }
-
-
-def get_stats() -> Dict[str, Any]:
-    """总览: total / by_category / by_source / avg_confidence"""
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body={
-        "size": 0,
-        "aggs": {
-            "by_category": {"terms": {"field": "category", "size": 20}},
-            "by_source": {"terms": {"field": "source", "size": 20}},
-            "avg_conf": {"avg": {"field": "confidence"}},
-        }
-    }, timeout=10)
-    total = resp.get("hits", {}).get("total", {}).get("value", 0) if code == 200 else 0
-    by_cat = {b["key"]: b["doc_count"] for b in (resp.get("aggregations", {}).get("by_category", {}).get("buckets", []) if code == 200 else [])}
-    by_src = {b["key"]: b["doc_count"] for b in (resp.get("aggregations", {}).get("by_source", {}).get("buckets", []) if code == 200 else [])}
-    avg_conf = round(resp.get("aggregations", {}).get("avg_conf", {}).get("value", 0) or 0, 3) if code == 200 else 0
-    return {
-        "total": total,
-        "by_category": by_cat,
-        "by_source": by_src,
-        "avg_confidence": avg_conf,
-        "backend": "elasticsearch",
-        "es_url": ES_URL,
-    }
-
-
-def get_categories() -> List[str]:
-    code, resp = _es_request("POST", f"/{ES_INDEX}/_search", body={
-        "size": 0,
-        "aggs": {"by_category": {"terms": {"field": "category", "size": 20}}}
-    }, timeout=10)
-    if code != 200:
-        return []
-    return [b["key"] for b in resp.get("aggregations", {}).get("by_category", {}).get("buckets", [])]
-
-
-# ============================================================
-# 给 LLM 用的 RAG 召回 (跟 sqlite 的 recall_for_context 兼容)
+# 给 LLM 用的 RAG 召回
 # ============================================================
 def recall_for_context(query: str, limit: int = 5) -> str:
-    """给 LLM 拼 markdown 段 (跟 knowledge_base.py 的同名函数兼容)"""
+    """给 LLM 拼 markdown 段 (跟 sqlite 的 recall_for_context 兼容)"""
     if not query or not query.strip():
         return ""
     results = hybrid_search(query, top_k=limit)
     if not results:
         return ""
-    lines = [f"## 📚 知识库相关历史 (ES 混合检索 · {len(results)} 条)", ""]
+    lines = [f"## 📚 知识库相关历史 (faiss + FTS5 混合检索 · {len(results)} 条)", ""]
     for i, e in enumerate(results, 1):
         tag_str = ", ".join((e.get("tags") or [])[:5]) or "—"
-        content_short = e.get("content", "")[:400] + ("..." if len(e.get("content", "")) > 400 else "")
+        content_short = e.get("content", "")
+        if len(content_short) > 400:
+            content_short = content_short[:400] + "..."
         score_str = f" | RRF 分数: {e.get('score', 0):.2f}" if e.get("score") is not None else ""
         lines.append(
             f"### {i}. [{e.get('category', '')}] {e.get('title', '')}\n"
@@ -491,12 +424,90 @@ def recall_for_context(query: str, limit: int = 5) -> str:
 
 
 # ============================================================
+# 列表/统计/详情 (跟 sqlite 接口兼容, 给 server.py 用)
+# ============================================================
+def get_stats() -> Dict[str, Any]:
+    """总览: total / by_category / by_source / avg_confidence + faiss 状态"""
+    from .knowledge_base import get_kb
+    kb = get_kb()
+    stats = kb.get_stats()
+    # 加 faiss 状态
+    if _load_faiss_index():
+        with _faiss_lock:
+            stats["faiss"] = {
+                "indexed": len(_faiss_ids),
+                "in_sync": len(_faiss_ids) == stats.get("total", 0),
+                "index_path": FAISS_INDEX_PATH,
+            }
+    stats["backend"] = "faiss-cpu + FTS5"
+    return stats
+
+
+def get_categories() -> List[str]:
+    from .knowledge_base import get_kb
+    return get_kb().get_categories()
+
+
+def get_entry(entry_id: int) -> Optional[Dict[str, Any]]:
+    from .knowledge_base import get_kb
+    entry = get_kb().get(entry_id)
+    if not entry:
+        return None
+    return {
+        "id": entry.id, "category": entry.category, "title": entry.title,
+        "content": entry.content, "source": entry.source, "tags": entry.tags,
+        "confidence": entry.confidence, "created_at": entry.created_at,
+        "updated_at": entry.updated_at,
+    }
+
+
+def list_recent(limit: int = 20, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    from .knowledge_base import get_kb
+    entries = get_kb().list_recent(limit=limit, category=category)
+    return [
+        {
+            "id": e.id, "category": e.category, "title": e.title,
+            "content": e.content, "source": e.source, "tags": e.tags,
+            "confidence": e.confidence, "created_at": e.created_at,
+            "updated_at": e.updated_at,
+        }
+        for e in entries
+    ]
+
+
+def search_text(query: str, limit: int = 10, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    """UI 搜索框用, 走 FTS5 (BM25) — 跟 sqlite 兼容"""
+    from .knowledge_base import get_kb
+    entries = get_kb().search_fts5(query, limit=limit, category=category)
+    return [
+        {
+            "id": e["id"], "category": e["category"], "title": e["title"],
+            "content": e["content"], "source": e["source"], "tags": e["tags"],
+            "confidence": e["confidence"], "created_at": e["created_at"],
+        }
+        for e in entries
+    ]
+
+
+# ============================================================
 # 健康检查
 # ============================================================
 def is_available() -> bool:
-    """ES + 模型都可用? 任何一边 down 都返 False (走 sqlite 兜底)"""
-    code, _ = _es_request("GET", "/_cluster/health", timeout=3)
-    if code != 200:
+    """faiss + 模型 + FTS5 都 OK?"""
+    try:
+        sess, _ = _load_embed_model()
+        if sess is None:
+            return False
+        if not _load_faiss_index():
+            return False
+        # FTS5 测一下
+        from .knowledge_base import get_kb
+        kb = get_kb()
+        # 任意查, 看 fts5 表存在
+        with kb._connect() as conn:
+            cur = conn.execute("SELECT 1 FROM kb_entries_fts LIMIT 1")
+            cur.fetchone()
+        return True
+    except Exception as e:
+        logger.warning(f"is_available 检查失败: {e}")
         return False
-    sess, _ = _load_embed_model()
-    return sess is not None

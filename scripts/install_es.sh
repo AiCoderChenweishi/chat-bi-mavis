@@ -1,8 +1,19 @@
 #!/bin/bash
-# scripts/install_es.sh — 在 server 上装 ES 8.18 + smartcn + bge 模型
-# 适用: Ubuntu 22.04 / Debian 12 / 内存 ≥ 1.5G
-# 用法: bash scripts/install_es.sh
+# scripts/install_es.sh — DEPRECATED 2026-07-30
+# 之前装 ES 8 + smartcn + bge, 现在改用 faiss-cpu + FTS5 (同进程, 零 systemd)
+# 改用: bash scripts/install_faiss.sh
+#
+# 原 ES 方案遇到:
+#   - 8.153 1.6G 内存装 ES OOM kernel kill
+#   - sandbox 公网端口被云防火墙挡
+#   - RRF 是 enterprise license 限定 (用 Python 端 RRF 替代)
+#
+# 留这文件作 history, 实际部署用 install_faiss.sh
 set -e
+echo "⚠️ install_es.sh DEPRECATED, 改用 install_faiss.sh (faiss-cpu 同进程, 内存友好)"
+echo "  改跑: bash scripts/install_faiss.sh"
+exit 1
+
 
 ES_VERSION="8.18.0"
 ES_DIR="/opt/es/elasticsearch-${ES_VERSION}"
