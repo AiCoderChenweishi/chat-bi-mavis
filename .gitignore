@@ -27,3 +27,4 @@ reports/*.png
 data/
 reports/echarts/
 warehouse/metadata.json
+static/js/
