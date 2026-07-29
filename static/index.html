@@ -563,6 +563,57 @@
     .phase-pill.active { background: #1e3a8a; color: #93c5fd; border-color: #3b82f6; }
     .phase-pill.done { background: #14532d; color: #86efac; border-color: #4ade80; }
   </style>
+
+<style>
+/* v0.2 KB save button (顶部) */
+.btn-kb-save {
+  cursor: pointer;
+  font-family: inherit;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e6e6e6;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  margin-left: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-kb-save:hover {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+.btn-kb-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* v0.2 KB save toast */
+.kb-save-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1a1f2e;
+  color: #e6e6e6;
+  padding: 12px 20px;
+  border-radius: 6px;
+  font-size: 13px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  max-width: 400px;
+  border-left: 3px solid #3b82f6;
+  animation: kbToastIn 0.2s ease;
+}
+.kb-save-toast.ok { border-left-color: #10b981; }
+.kb-save-toast.err { border-left-color: #ef4444; }
+.kb-save-toast a { color: #93c5fd; text-decoration: underline; }
+@keyframes kbToastIn {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+</style>
 </head>
 <body>
   <header>
@@ -570,6 +621,9 @@
     <div class="header-meta">
       <span class="pill" id="llmPill">LLM: 检测中...</span>
       <span class="pill mock">⚠ MOCK 数据演示</span>
+      <button class="btn-kb-save" id="btn-save-kb" title="把整个页面内容用 AI 总结成一条知识存入知识库">
+        📥 存储洞察到知识库
+      </button>
     </div>
   </header>
 
@@ -1057,6 +1111,68 @@ async function send(overrideText) {
     removeThinking();
 
     const s = data.state || {};
+
+    // === v0.2 顶部 "存储洞察到知识库" button 钩子 ===
+    const btnKb = document.getElementById('btn-save-kb');
+    if (btnKb && !btnKb.dataset._bound) {
+      btnKb.dataset._bound = '1';
+      btnKb.addEventListener('click', () => {
+        // 抓整个 <body> 文本 (deep clone 排除 button 自身 + toast)
+        const btnClone = btnKb.cloneNode(true);
+        const tmp = document.createElement('div');
+        tmp.innerHTML = document.body.innerHTML;
+        // 删掉按钮 / 防止 button 文本进入 page_text
+        tmp.querySelectorAll('.btn-kb-save, .kb-save-toast').forEach(n => n.remove());
+        const text = (tmp.innerText || '').trim();
+        kbSaveToKB('page_top', text);
+      });
+    }
+
+    // === v0.2 KB save 逻辑 ===
+    function kbShowToast(msg, isOk) {
+      const t = document.createElement('div');
+      t.className = 'kb-save-toast ' + (isOk ? 'ok' : 'err');
+      t.innerHTML = msg;
+      document.body.appendChild(t);
+      setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 200); }, 4500);
+    }
+
+    async function kbSaveToKB(sourceLabel, text) {
+      if (!text || text.trim().length < 50) {
+        kbShowToast('❌ 页面内容过少 (&lt; 50 字符), 没法总结成知识', false);
+        return;
+      }
+      // 禁用所有 KB save button
+      const btns = document.querySelectorAll('.btn-kb-save');
+      btns.forEach(b => {
+        b.disabled = true;
+        b.dataset._origText = b.textContent;
+        b.textContent = '⏳ 总结中...';
+      });
+      try {
+        const r = await fetch(location.origin + '/api/extract-insight-from-page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ page_text: text, source_label: sourceLabel, max_chars: 12000 }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          kbShowToast(
+            `✅ 已存入知识库 id=<a href="/api/kb/list" target="_blank">${d.id}</a> · <b>${escapeHtml(d.category)}</b> · ${escapeHtml(d.title)}`,
+            true
+          );
+        } else {
+          kbShowToast(`❌ 存入失败: ${escapeHtml(d.error || 'unknown')}`, false);
+        }
+      } catch (e) {
+        kbShowToast(`❌ 网络错误: ${escapeHtml(String(e))}`, false);
+      } finally {
+        btns.forEach(b => {
+          b.disabled = false;
+          if (b.dataset._origText) b.textContent = b.dataset._origText;
+        });
+      }
+    }
     updatePhaseBar(data.phase);
 
     // 报告区

@@ -6,15 +6,15 @@
 
 | 维度 | 状态 | 数字/位置 |
 |------|------|----------|
-| 📐 **designed** | 完整 | 4 个 agent prompt (prompts/01-04) + workflow 状态机 (agent/workflow.py) + 17 张表数仓 schema |
-| 💻 **implemented** | 完整 | 11 个 Python 文件,~1,800 行;5 个业务场景 e2e 测试 5/5 通过 |
-| 🚀 **deployed** | 本地服务 | FastAPI server,localhost:8000,可访问 UI |
-| ✅ **validated** | 端到端 | 5 个场景:GMV/复购/漏斗/券 ROI/留存,SQL 跑出真实数据,图表渲染 OK |
+| 📐 **designed** | v0.1 + v0.2 | v0.1: 4 agent + workflow + 17 表数仓. v0.2: KB 知识库 + RAG 召回 + page_extract 按钮 |
+| 💻 **implemented** | v0.1 + v0.2 | 14 个 Python 文件 ~3,800 行; 1 个新 prompt `05_kb_extractor.md`; 5 个 e2e 场景全过 |
+| 🚀 **deployed** | 2 个 server | dev: 8.153.192.136:8000; prod: 117.72.40.22:8000 (2026-07-29 上线) |
+| ✅ **validated** | 端到端 | 5 个业务场景 e2e 5/5; KB 写入 1 条 page_extract 验证; minimax LLM 跑通 |
 
 **没做的事**:
-- ❌ 没部署到公网 server(只本地运行)
 - ❌ 没接真实数仓(MySQL/Hive/ClickHouse),只跑 DuckDB mock
-- ❌ mock LLM fallback 简单,真实场景需要 minimax/deepseek 才好用
+- ❌ 接入真实 LLM 时偶发 rate limit 临时 429, 已有 6 次 server 端重试
+- ❌ 暂未做 KB 浏览页 UI(只有 API 端点)
 
 ## 🏗️ 架构
 
@@ -173,3 +173,53 @@ python3 tests/e2e_test.py          # 真实 LLM
 - [ ] 图表支持更多类型(漏斗/热力/桑基)
 - [ ] 结论支持导出 PDF/PPT
 - [ ] 用户管理(多租户、session 持久化)
+
+## 🆕 v0.2 — 知识库 (KB) + RAG 召回 + page_extract 按钮 (2026-07-29)
+
+**新增**:
+- `agent/knowledge_base.py` — KB 模块, sqlite3 存储, KBEntry / add / search / list / get / delete / recall_for_context
+- `prompts/05_kb_extractor.md` — AI 总结 page 内容的专用 prompt (强约束 JSON 格式)
+- `server.py` 7 个新端点:
+  - `GET  /api/kb/stats` — KB 统计 (total / by_category / by_source)
+  - `GET  /api/kb/list` — 列表 (limit + category 过滤)
+  - `GET  /api/kb/search?q=xxx` — 全文搜索
+  - `POST /api/kb/add` — 手动添加
+  - `DELETE /api/kb/{id}` — 删除
+  - `POST /api/kb/recall` — RAG 召回 (返 markdown 给 LLM)
+  - `POST /api/extract-insight-from-page` — **核心**: UI button 触发, AI 总结整个页面存 KB
+- `agent/agents.py` — `RequirementClarifier` + `ConclusionWriter` 调 LLM 前自动 `get_kb().recall_for_context(query)`, 把 top-5 KB 历史拼到 prompt
+- `static/index.html` — 顶部"📥 存储洞察到知识库" button, 抓整个 `<body>` 文本 → POST → toast 反馈
+
+**架构**:
+```
+用户查"6月复购率" → 
+  ↓
+[Agent 1 需求澄清] ← get_kb().recall_for_context("复购率") 拼 KB 历史
+  ↓
+[Agent 4 结论撰写] ← get_kb().recall_for_context("复购率 + 指标名") 拼 KB 历史
+  ↓
+[页面渲染] ← UI 顶部 "📥 存储洞察到知识库" 按钮
+  ↓
+[点 button] → POST /api/extract-insight-from-page (抓整个 <body> 文本)
+  ↓
+[minimax LLM] 总结成 KBEntry (category/title/content/tags/confidence)
+  ↓
+[KB.add_entry] 存 sqlite3
+  ↓
+[toast 反馈] "✅ 已存入 KB id=XXX · 洞察 · ..."
+```
+
+**RAG 闭环场景**:
+- 第 1 次问"复购率" → KB 空, agent 正常跑, 结论写 DB
+- user 看到结论, 点 button 存 KB → KB +1
+- 第 2 次问"复购率" → RequirementClarifier 自动召回 KB 历史, 看到"上次复购率 28.5% 同比下降 3.2pp", 减少反问, 结论能直接引用历史数字
+
+**3 段 JSON parse 兜底** (LLM 飘忽治本):
+1. 裸 JSON `{"a":1}`
+2. ` ```json ... ``` ` 包装
+3. 找 `{...}` 段
+4. Bullet list / markdown 段头 (### 洞察 / - text) → 自动拼成 dict
+
+**部署 2 个 server** (跨项目 deploy 治本):
+- **dev**: 8.153.192.136:8000 (Aliyun ECS, /opt/data-analyst-agent, dev 分支)
+- **prod**: 117.72.40.22:8000 (Ubuntu 24.04, /opt/data-analyst-agent, master 分支)

@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from .llm_client import LLMClient, safe_json_loads
+from .knowledge_base import get_kb
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
 METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "warehouse", "metadata.json")
@@ -104,6 +105,12 @@ class RequirementClarifier:
   "round": {round_count}
 }}
 ```"""
+
+        # v0.2 RAG 召回 — 在调 LLM 之前, 把 KB 相关历史拼到 prompt 末尾
+        rag_query = original_query
+        rag_context = get_kb().recall_for_context(rag_query, limit=5)
+        if rag_context:
+            prompt = prompt + "\n\n---\n\n" + rag_context + "\n\n(以上为知识库相关历史, 仅作参考, 不要直接抄, 跟当前需求不符可忽略)"
 
         raw = self.llm.call(self.system, prompt, json_mode=True, temperature=0.2)
         result = safe_json_loads(raw)
@@ -715,6 +722,14 @@ class ConclusionWriter:
 - 必标 mock 数据局限
 
 请按 system prompt 的 JSON schema 输出完整 BI 洞察报告。"""
+
+        # v0.2 RAG 召回 — 跟 ConclusionWriter 看历史洞察 / 模板, 复用 + 避免重复
+        rag_query = (spec or {}).get("original_query", "") + " " + " ".join(
+            (m.get("name", "") for m in (spec or {}).get("metrics", []))
+        )
+        rag_context = get_kb().recall_for_context(rag_query, limit=5)
+        if rag_context:
+            user = user + "\n\n---\n\n" + rag_context + "\n\n(以上为知识库相关历史结论, 可参考 + 引用, 但不要直接抄, 跟当前数据/场景不符可忽略)"
 
         raw = self.llm.call(self.system, user, json_mode=True, temperature=0.5)
         result = safe_json_loads(raw)

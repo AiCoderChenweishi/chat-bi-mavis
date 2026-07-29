@@ -22,3 +22,8 @@ reports/*.png
 # 部署产物
 *.log
 /tmp/
+
+# v0.2 KB db + echarts json (运行时产物)
+data/
+reports/echarts/
+warehouse/metadata.json
