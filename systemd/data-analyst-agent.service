@@ -1,0 +1,18 @@
+[Unit]
+Description=Data Analyst Agent (FastAPI + DuckDB + 4 LLM agents)
+After=network.target
+
+[Service]
+Type=simple
+User=mavis
+WorkingDirectory=/opt/mavis-dev/data-analyst-agent
+Environment="MINIMAX_API_KEY="
+Environment="DEEPSEEK_API_KEY="
+ExecStart=/usr/bin/python3 -u server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
