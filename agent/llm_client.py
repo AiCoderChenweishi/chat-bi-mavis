@@ -24,12 +24,49 @@ class LLMClient:
             return "deepseek"
         return "mock"
 
+    # 全局 persona 注入 — 4 个 agent 共享的"老同事"性格
+    PERSONA_PREAMBLE = """\
+# 你的角色 (全局规则,优先级最高)
+
+你是用户的 **老同事 / 老搭档**, 不是客服、不是助手、不是 ChatGPT。
+
+## 性格特征 (必走)
+- **敢怼**: 敢说 "你这个问题问错了" / "这个数据不支持你的假设" / "我不建议这么决策, 因为..."
+- **不卑不亢**: 不献媚, 不 "亲~", 不 "好的为您服务", 不 "请问您"
+- **专业且直白**: 数字该是 1,234,567 就报 1,234,567, 不 "约 120 万"
+- **不写空话**: 禁词清单 (出现任何 1 个就重写):
+  - ❌ "建议加强运营" / "持续优化" / "持续关注"
+  - ❌ "总体表现良好" / "稳中向好" / "数据略有波动属正常"
+  - ❌ "请关注 XX" / "希望对您有帮助" / "完全理解您的需求"
+  - ❌ "亲~" / "您好!" / "很高兴为您服务"
+  - ❌ "总体来看" / "综合分析" / "整体表现"
+- **给真话**: 数据不明说数据不明, 反方意见该说就说
+- **不啰嗦**: 短句, 一段话能讲清的不开三段
+
+## 跟用户说话的 3 个原则
+1. **先复述理解, 再追问/分析** — 不让 user 重复讲
+2. **敢说 "我不知道" / "数据不支持" / "你可能问错了"** — 比假装知道更有价值
+3. **给反方意见** — 业务建议里必须含 "不建议做 X, 因为 Y" 的反对项 (1-3 条)
+
+## 写在最后
+你是同事, 不是工具. 把 user 当成能接受真话的人, 而不是需要哄的客户.
+"""
+
+    @classmethod
+    def inject_persona(cls, system: str) -> str:
+        """每个 agent 的 system prompt 都强制拼上 persona preamble"""
+        if not system:
+            return cls.PERSONA_PREAMBLE
+        return cls.PERSONA_PREAMBLE + "\n\n---\n\n" + system
+
     def call(self, system: str, user: str, json_mode: bool = True, temperature: float = 0.3) -> str:
+        # 全局 persona 注入 — 不论哪个 provider / agent
+        system_with_persona = self.inject_persona(system)
         if self.provider == "minimax":
-            return self._call_minimax(system, user, json_mode, temperature)
+            return self._call_minimax(system_with_persona, user, json_mode, temperature)
         if self.provider == "deepseek":
-            return self._call_deepseek(system, user, json_mode, temperature)
-        return self._call_mock(system, user, json_mode)
+            return self._call_deepseek(system_with_persona, user, json_mode, temperature)
+        return self._call_mock(system_with_persona, user, json_mode)
 
     def _call_minimax(self, system, user, json_mode, temperature) -> str:
         """minimax(abab5.5s)"""
@@ -355,14 +392,29 @@ ORDER BY gmv DESC;"""
             u = user
             return json.dumps({
                 "summary": f"基于需求「{u[:40]}」的分析,见下方关键发现。数据为 mock 合成,真实业务请以线上数仓为准。",
+                "business_background": "当前为 7-8 月电商平稳期,行业整体 GMV 较 6 月 618 大促月回落 5-10%。",
                 "key_findings": [
                     "关键发现 1:核心指标已完成计算,具体数字见数据表",
                     "关键发现 2:Top 维度贡献了主要部分,需关注长尾",
                     "关键发现 3:同比/环比波动在合理范围内,无明显异常",
                 ],
+                "abnormal_signals": [
+                    "⚠️ mock 数据无显著异常信号 — 真实业务可能存在季节/活动影响",
+                ],
+                "possible_causes": [
+                    {
+                        "hypothesis": "假设 1:波动由自然季节性导致",
+                        "evidence": "mock 数据波动范围在 ±15% 内,符合电商月度自然波动",
+                        "counter_evidence": "无去年同期数据, 季节性判断需业务补充",
+                    },
+                ],
+                "contrarian_views": [
+                    "❌ 不建议凭 mock 结论直接决策 — 数据是合成的, 仅供流程演示, 真实业务请走线上数仓",
+                    "⚠️ 警惕 Top 1 占比 50%+ 的结论 — 业务结构集中度需要交叉验证, 别一刀切按 Top 1 拍",
+                ],
                 "business_recommendations": [
-                    "建议 1:对 Top 维度加大资源投入,保持优势",
-                    "建议 2:长尾维度评估 ROI,优化低产出环节",
+                    "动作 1:用真数据重跑同一口径,对比 mock 结论差异 — 责任方:数据团队,时间:本周内",
+                    "动作 2:Top 维度专项深挖 — 责任方:业务 + 分析师,时间:下个 sprint",
                 ],
                 "data_limitations": [
                     "⚠️ 数据为 mock 生成(2026-07),真实业务分布可能更集中",

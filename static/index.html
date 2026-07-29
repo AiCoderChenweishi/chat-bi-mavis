@@ -259,6 +259,24 @@
       position: absolute;
       left: 0;
     }
+    .contrarian-list {
+      margin: 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .contrarian-list li {
+      padding: 10px 0 10px 24px;
+      position: relative;
+      line-height: 1.65;
+      font-size: 14px;
+      color: #fca5a5;
+      font-weight: 500;
+    }
+    .contrarian-list li::before {
+      content: "🛑";
+      position: absolute;
+      left: 0;
+    }
     .causes-list {
       display: flex;
       flex-direction: column;
@@ -868,6 +886,18 @@ function renderReport(state) {
             </div>
           `).join('')}
         </div>
+      </div>
+    `;
+  }
+
+  // 3.7 反方意见(BI 段 5,V2 新增 — 敢说真话)
+  if (c.contrarian_views && c.contrarian_views.length) {
+    html += `
+      <div class="report-section" style="border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.05)">
+        <h3 style="color:#fca5a5">🛑 反方意见 (敢说不)</h3>
+        <ul class="contrarian-list">
+          ${c.contrarian_views.map(v => `<li>${esc(v)}</li>`).join('')}
+        </ul>
       </div>
     `;
   }

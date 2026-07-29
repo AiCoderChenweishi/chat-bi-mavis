@@ -719,7 +719,63 @@ class ConclusionWriter:
         raw = self.llm.call(self.system, user, json_mode=True, temperature=0.5)
         result = safe_json_loads(raw)
         if not isinstance(result, dict) or "summary" not in result:
+            # 兼容 deepseek 返的 {"report": [{section, content}]} 格式 — 解析出 contrarian_views
+            report_list = result.get("report") if isinstance(result, dict) else None
+            if isinstance(report_list, list) and report_list:
+                return self._normalize_report_format(report_list, sql_result, spec, chart_path)
             return self._bi_fallback(sql_result, spec, chart_path)
+        if chart_path:
+            result["chart_path"] = chart_path
+        return result
+
+    def _normalize_report_format(self, report_list: list, sql_result: dict, spec: dict, chart_path: Optional[str]) -> Dict:
+        """
+        兼容 deepseek 等 LLM 返的 {"report": [{section, content}]} 自由格式
+        解析出 6 段式 BI 报告的 schema 字段
+        """
+        sections_map = {}
+        for item in report_list:
+            if not isinstance(item, dict):
+                continue
+            sec = (item.get("section") or "").strip()
+            content = (item.get("content") or "").strip()
+            if sec and content:
+                sections_map[sec] = content
+
+        # 6 段式 schema 拼回去
+        def _split_to_list(text: str) -> list:
+            """按数字编号 / 换行 / 句号拆 list"""
+            if not text:
+                return []
+            # 优先按 "1. xxx" "2. xxx" 拆
+            import re
+            parts = re.split(r"\n?\s*\d+[\.、]\s+", text)
+            parts = [p.strip() for p in parts if p.strip()]
+            if len(parts) > 1:
+                return parts
+            # 否则按句号拆
+            parts = [p.strip() for p in re.split(r"[。\n]+", text) if p.strip()]
+            return parts
+
+        result = {
+            "summary": sections_map.get("业务背景", "")[:200] + " | " + sections_map.get("关键数字", "")[:200],
+            "business_background": sections_map.get("业务背景", ""),
+            "key_findings": _split_to_list(sections_map.get("关键数字", "")) or _split_to_list(sections_map.get("关键发现", "")),
+            "abnormal_signals": _split_to_list(sections_map.get("异常", "")) or _split_to_list(sections_map.get("异常信号", "")),
+            "possible_causes": [],  # 自由格式下不确定结构, 留空
+            "contrarian_views": _split_to_list(sections_map.get("反方意见", "")) or _split_to_list(sections_map.get("反方", "")) or [
+                "⚠️ LLM 走自由格式输出, 反方意见未明确 — 建议用 schema 模式重跑"
+            ],
+            "business_recommendations": _split_to_list(sections_map.get("可执行建议", "")) or _split_to_list(sections_map.get("建议", "")),
+            "data_limitations": [
+                "⚠️ LLM 走自由格式输出, 部分字段 (possible_causes 结构化) 无法提取, 已用 fallback",
+            ],
+            "chart_caption": "图表展示了主要指标的横向对比",
+            "follow_up_questions": [
+                "想下钻到具体维度吗?",
+                "想对比不同时间窗口(7/30/90 天)吗?",
+            ],
+        }
         if chart_path:
             result["chart_path"] = chart_path
         return result
