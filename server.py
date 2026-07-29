@@ -142,7 +142,17 @@ def _phase_default_message(phase: str) -> str:
 # ---- 静态资源 ----
 
 if os.path.exists(STATIC_DIR):
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    # v0.3.1: index.html 不缓存 (避免 user 浏览器卡老版本, 改完代码看不到)
+    # 其它静态资源 (CSS/JS/images) 正常 cache
+    class NoCacheStaticFiles(StaticFiles):
+        async def get_response(self, path, scope):
+            response = await super().get_response(path, scope)
+            if path == "index.html" or path == "/index.html":
+                response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+                response.headers["Expires"] = "0"
+            return response
+    app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/api/chart/{name}")
@@ -171,7 +181,16 @@ def index():
     html_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(html_path):
         with open(html_path) as f:
-            return HTMLResponse(f.read())
+            html = f.read()
+        # v0.3.1: 根路径不缓存 (浏览器不卡老版本)
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
     return HTMLResponse("<h1>Data Analyst Agent</h1><p>前端待开发</p>")
 
 
