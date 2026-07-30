@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .llm_client import LLMClient, safe_json_loads
 from .knowledge_base import get_kb
+from . import metadata_loader
 
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
 METADATA_PATH = os.path.join(os.path.dirname(__file__), "..", "warehouse", "metadata.json")
@@ -36,7 +37,20 @@ class RequirementClarifier:
 
     def __init__(self, llm: LLMClient):
         self.llm = llm
-        self.system = load_prompt("01_requirement_clarifier")
+        # v0.6.17 启动时加载 metadata, 拼到 system prompt 末尾
+        # 这样 LLM 永远知道数仓有哪些表 + 字段, 推 button / 答口径都用真实字段
+        metadata_loader.load()
+        base = load_prompt("01_requirement_clarifier")
+        meta_summary = metadata_loader.format_for_prompt()
+        self.system = (
+            base
+            + "\n\n## ⚠️ v0.6.17 数仓元数据 (你必须用真实字段推, 不准瞎编)\n"
+            + meta_summary
+            + "\n\n**纪律**: 推 metrics / dimensions / metric_definition 按钮时, "
+            + "**只用上表里实际有的字段**, 不准编 user 不存在的口径. 例如: "
+            + "metrics 候选应该从 gmv / order_cnt / user_cnt / roi / pv_cnt / "
+            + "cart_cnt / pay_cnt / retention_rate 等数值字段选, 不准说 '利润' '毛利' (数仓没这字段)."
+        )
 
     def parse(self, history: list, new_message: str) -> Dict[str, Any]:
         """
@@ -216,10 +230,18 @@ class RequirementClarifier:
                 spec.setdefault("assumptions", [])
                 spec.setdefault("user_confirmed", False)
                 spec.setdefault("is_mock_data", True)
+                # v0.6.17: 注入 original_query 给后续 _build_pending_options 用
+                spec["original_query"] = original_query
         # v0.6: 计算 pending_options (UI 按钮列表)
         # v0.6.2 治本: 用 hardcoded 7-slot check 覆盖 LLM 返的 open_questions
         # (LLM 老分轮问, user 体验灾难, 这里强制 7 槽位全列出)
         spec = result.get("spec")
+        # v0.6.17: 没 spec 时建空 spec + 注入 original_query, _build_pending_options 才能按 query 推
+        if not spec:
+            spec = {"original_query": original_query}
+            result["spec"] = spec
+        elif not spec.get("original_query"):
+            spec["original_query"] = original_query
         if result.get("phase") == "clarifying":
             computed_slots = self._compute_open_slots(spec)
             # 优先用 hardcoded (7 槽位全), 覆盖 LLM 返的 open_questions
@@ -430,12 +452,11 @@ class RequirementClarifier:
         - awaiting_confirmation: [确认, 修改, 跳过] 3 个
         - ready: [] (无, user 应该已经确认)
 
-        v0.6.14 治本: 按 user query 关键词 + metadata 推 dynamic options
-        不再 hardcode GMV/订单量 (用户问"留存"也推 GMV, 不合理)
+        v0.6.17 治本: 从数仓 metadata 推 options, 不再 hardcode
         """
         opts = []
         if phase == "clarifying":
-            # v0.6.14 治本: 按 query 关键词推 dynamic options
+            # v0.6.17: 从 metadata 推 dynamic options
             query = (spec or {}).get("original_query", "") if spec else ""
             option_map = self._build_dynamic_option_map(query, open_questions or [])
             seen = set()
@@ -468,16 +489,12 @@ class RequirementClarifier:
 
     def _build_dynamic_option_map(self, query: str, open_questions: list) -> dict:
         """
-        v0.6.14 治本: 按 user query 关键词推 dynamic options
-        不再 hardcode GMV/订单量 (用户问"留存"也推 GMV, 不合理)
-        按 query 关键词匹配置信业务场景:
-        - "留存/复购" → ads_user_retention / dwd_trade_order
-        - "ROI/券" → ads_coupon_roi
-        - "漏斗/转化" → ads_conversion_funnel
-        - "PV/UV/流量" → dwd_traffic_visit
-        - "DAU/MAU/活跃" → dws_trade_user_day
-        - "客单/AOV" → GMV/order_cnt
-        - "GMV/营收" (默认) → ads_gmv_daily
+        v0.6.17 治本: 从数仓 metadata 推 dynamic options
+        不再 hardcode / 关键词模糊推
+        1. 按 query 关键词 suggest 1-3 张相关表
+        2. 从这些表里抽真实存在的数值字段 → metrics 槽位
+        3. 从这些表里抽真实存在的 string/date 字段 → dimensions 槽位
+        4. time_range / comparison / filters 仍是通用选项
         """
         q = (query or "").lower()
         # 通用 default (time / comparison / filters, 所有 query 都有)
@@ -494,119 +511,109 @@ class RequirementClarifier:
             ],
             "filters": [
                 ("🚫 不额外过滤 (默认)", "不过滤"),
-                ("🚫 排除测试数据", "排除测试"),
-                ("🚫 排除 is_mock=true", "排除mock"),
+                ("🚫 排除测试数据 (is_mock=true)", "排除mock"),
             ],
         }
-        if any(kw in q for kw in ["留存", "retention", "复购", "回购"]):
-            result["metrics"] = [
-                ("📊 次日留存率", "次日留存"),
-                ("📊 7 日留存率", "7日留存"),
-                ("📊 30 日留存率", "30日留存"),
-                ("📊 复购率", "复购率"),
-            ]
-            result["metric_definition"] = [
-                ("⏱️ 7 日内下过 ≥2 单算复购", "7日复购"),
-                ("⏱️ 30 日内下过 ≥2 单", "30日复购"),
-                ("⏱️ 按注册日算 (cohort)", "按注册日"),
-            ]
-            result["dimensions"] = [
-                ("📂 按注册月 cohort", "按cohort"),
-                ("📂 按新老客", "按新老客"),
-            ]
-            result["segmentation"] = [
-                ("👥 新客 (首单)", "新客按首单"),
-                ("👥 老客 (历史下过单)", "老客"),
-            ]
-        elif any(kw in q for kw in ["roi", "券", "优惠", "coupon"]):
-            result["metrics"] = [
-                ("📊 ROI (gmv_driven / coupon_amt)", "ROI"),
-                ("📊 券面额 (coupon_amt)", "券面额"),
-                ("📊 带动 GMV (gmv_driven)", "带动GMV"),
-            ]
-            result["metric_definition"] = [
-                ("💰 ROI = GMV / 券面额", "ROI_v1"),
-                ("💰 ROI = GMV / (券面额+运营成本)", "ROI_v2"),
-            ]
-            result["dimensions"] = [
-                ("📂 按券类型 (coupon_type)", "按券类型"),
-                ("📂 按日期", "按日期"),
-            ]
-        elif any(kw in q for kw in ["漏斗", "转化", "funnel"]):
-            result["metrics"] = [
-                ("📊 浏览→加购 (pv_to_cart)", "pv_to_cart"),
-                ("📊 加购→下单 (cart_to_order)", "cart_to_order"),
-                ("📊 下单→支付 (order_to_pay)", "order_to_pay"),
-            ]
-            result["metric_definition"] = [
-                ("💰 各步转化率 (按漏斗定义)", "漏斗v1"),
-                ("💰 整体转化率 (PV→支付)", "整体转化"),
-            ]
-            result["dimensions"] = [
-                ("📂 按渠道 (channel)", "按渠道"),
-                ("📂 按日期", "按日期"),
-            ]
-        elif any(kw in q for kw in ["pv", "uv", "流量", "访问", "访客"]):
-            result["metrics"] = [
-                ("📊 PV (page view)", "PV"),
-                ("📊 UV (unique visitor)", "UV"),
-                ("📊 跳出率", "跳出率"),
-            ]
-            result["metric_definition"] = [
-                ("⏱️ PV = 页面浏览次数", "PV_def"),
-                ("⏱️ UV = 去重访客数", "UV_def"),
-            ]
-            result["dimensions"] = [
-                ("📂 按渠道", "按渠道"),
-                ("📂 按页面", "按页面"),
-            ]
-        elif any(kw in q for kw in ["dau", "mau", "活跃", "在线", "用户数"]):
-            result["metrics"] = [
-                ("📊 DAU (日活)", "DAU"),
-                ("📊 MAU (月活)", "MAU"),
-                ("📊 新增用户", "新增用户"),
-            ]
-            result["metric_definition"] = [
-                ("⏱️ DAU = 当日登录去重 user", "DAU_def"),
-                ("⏱️ MAU = 30 日滑窗活跃", "MAU_def"),
-            ]
-            result["dimensions"] = [
-                ("📂 按日期", "按日期"),
-                ("📂 按新老客", "按新老客"),
-            ]
-        elif any(kw in q for kw in ["客单", "aov", "arpu", "单均价"]):
-            result["metrics"] = [
-                ("📊 客单价 (GMV/已支付订单)", "客单价"),
-                ("📊 ARPU", "ARPU"),
-            ]
-            result["metric_definition"] = [
-                ("💰 客单价 = GMV / 订单数", "AOV_v1"),
-            ]
-            result["dimensions"] = [
-                ("📂 按品类", "按品类"),
-                ("📂 按新老客", "按新老客"),
-            ]
-        else:
-            # 默认: GMV / 销售额 / 营收 (或没匹配任何关键词)
-            result["metrics"] = [
+        # v0.6.17: 从 metadata 推相关表 + 字段
+        suggested_tables = metadata_loader.suggest_tables(query, top_k=3)
+        # 抽所有表里的数值字段 (去重, 按出现在建议表的顺序)
+        seen_metrics = set()
+        metrics_opts = []
+        for tname in suggested_tables:
+            t = metadata_loader.get_table(tname)
+            if not t: continue
+            for f in t.get("fields", []):
+                fname = f.get("name", "")
+                if fname in seen_metrics: continue
+                if fname in metadata_loader._EXCLUDE_FIELDS: continue
+                if not metadata_loader._is_numeric_type(f.get("type", "")): continue
+                # 关键指标才推 (pct / 率 也算)
+                comment = f.get("comment", "")
+                label = f"📊 {fname}"
+                if comment:
+                    label += f" ({comment[:20]})"
+                metrics_opts.append((label, fname))
+                seen_metrics.add(fname)
+                if len(metrics_opts) >= 5:
+                    break
+            if len(metrics_opts) >= 5:
+                break
+        # 抽所有表里的 string/date 字段
+        seen_dims = set()
+        dims_opts = []
+        for tname in suggested_tables:
+            t = metadata_loader.get_table(tname)
+            if not t: continue
+            for f in t.get("fields", []):
+                fname = f.get("name", "")
+                if fname in seen_dims: continue
+                if fname in metadata_loader._EXCLUDE_FIELDS: continue
+                if not (metadata_loader._is_text_type(f.get("type", "")) or
+                        metadata_loader._is_date_type(f.get("type", ""))):
+                    continue
+                # stat_date / create_time 跳过 (永远是隐式维度)
+                if fname in {"stat_date", "create_time", "update_time", "dt"}:
+                    continue
+                comment = f.get("comment", "")
+                label = f"📂 按 {fname}"
+                if comment:
+                    label += f" ({comment[:20]})"
+                dims_opts.append((label, fname))
+                seen_dims.add(fname)
+                if len(dims_opts) >= 4:
+                    break
+            if len(dims_opts) >= 4:
+                break
+        # 兜底: 如果 metadata 没推出来 metrics, 给通用
+        if not metrics_opts:
+            metrics_opts = [
                 ("📊 GMV (销售额)", "GMV"),
-                ("📊 订单量 (order_cnt)", "订单量"),
-                ("📊 用户数 (user_cnt)", "用户数"),
+                ("📊 订单量", "订单量"),
             ]
-            result["metric_definition"] = [
+        if not dims_opts:
+            dims_opts = [
+                ("📂 不拆维度 (汇总)", "不拆维度"),
+                ("📂 按日期", "按日期"),
+            ]
+        result["metrics"] = metrics_opts
+        result["dimensions"] = dims_opts
+        # metric_definition 按主表的字段名推 (含退单/不含退单 看有没有 refund_rate 字段)
+        main_table = metadata_loader.get_table(suggested_tables[0]) if suggested_tables else None
+        metric_defs = []
+        if main_table:
+            field_names = {f.get("name", "") for f in main_table.get("fields", [])}
+            if "refund_rate" in field_names or "refund_amt" in field_names:
+                metric_defs.append(("💰 不含退单 (默认)", "不含退单"))
+                metric_defs.append(("💰 含退单", "含退单"))
+            if "is_new" in field_names or "user_type" in field_names:
+                metric_defs.append(("👥 新客 (首单)", "新客按首单"))
+                metric_defs.append(("👥 老客 (历史)", "老客"))
+            if "yoy_pct" in field_names or "yoy_gmv" in field_names:
+                metric_defs.append(("📈 含同比 (默认)", "含同比"))
+                metric_defs.append(("📈 不含同比", "不含同比"))
+        # 兜底
+        if not metric_defs:
+            metric_defs = [
                 ("💰 不含退单 (默认)", "不含退单"),
                 ("💰 含退单", "含退单"),
-                ("💰 不扣减 (毛 GMV)", "不扣减"),
             ]
-            result["dimensions"] = [
-                ("📂 按品类 (category_l1)", "按品类"),
-                ("📂 按渠道 (channel)", "按渠道"),
-                ("📂 不拆维度 (汇总)", "不拆维度"),
-            ]
+        result["metric_definition"] = metric_defs
+        # segmentation: 只在主表有 user_type/is_new 时推
+        if main_table:
+            field_names = {f.get("name", "") for f in main_table.get("fields", [])}
+            if "is_new" in field_names or "user_type" in field_names:
+                result["segmentation"] = [
+                    ("👥 不分层 (全部)", "不分层"),
+                    ("👥 新客 (首单)", "新客按首单"),
+                    ("👥 老客 (历史下过单)", "老客"),
+                ]
+            else:
+                result["segmentation"] = [
+                    ("👥 不分层 (全部)", "不分层"),
+                ]
+        else:
             result["segmentation"] = [
                 ("👥 不分层 (全部)", "不分层"),
-                ("👥 新客 (首单)", "新客按首单"),
-                ("👥 老客 (历史下过单)", "老客"),
             ]
         return result
 
