@@ -221,9 +221,36 @@ async def chat_stream_new(req: NewChatReq):
     )
 
 
+@app.post("/api/chat//stream")
+async def chat_stream_empty_sid(req: NewChatReq):
+    """v0.6.6 兜底: 空 sid URL (/api/chat//stream) 当成新会话
+    原因: 前端老代码可能拼出 '//stream' 双斜杠, 不接受 404 让 user 困惑
+    """
+    return StreamingResponse(
+        _stream_chat("", req.message, is_new=True),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.post("/api/chat/{session_id}/stream")
 async def chat_stream_step(session_id: str, req: StepReq):
     """续推 + 流式 (SSE)"""
+    if not session_id or session_id == "null" or session_id == "undefined":
+        # 兜底: 空 sid 当新会话
+        return StreamingResponse(
+            _stream_chat("", req.message or "", is_new=True),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
     return StreamingResponse(
         _stream_chat(session_id, req.message or "", is_new=False),
         media_type="text/event-stream",
