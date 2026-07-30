@@ -305,7 +305,8 @@ class DataAnalystWorkflow:
         title = " / ".join(metrics_names) if metrics_names else "数据结果"
         try:
             # ECharts: 返 /api/echart/<session_id> 路径
-            st.chart_path = render_echart(st.sql_result, title=title, session_id=st.session_id)
+            # v0.6.12: 传 spec 让 chart_renderer 决定图类型 (grain=day → line, 推 fallback)
+            st.chart_path = render_echart(st.sql_result, title=title, session_id=st.session_id, spec=st.spec)
         except Exception as e:
             st.chart_path = None
             print(f"[warn] ECharts 渲染失败: {e}")

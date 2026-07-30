@@ -33,8 +33,13 @@ def _to_str(v):
 
 # ============ 主入口: ECharts ============
 
-def pick_chart_type(data: Dict[str, Any]) -> str:
-    """根据数据形态选图(共用,kpi/line/bar/pie)"""
+def pick_chart_type(data: Dict[str, Any], spec: Optional[Dict] = None) -> str:
+    """根据数据形态选图(共用,kpi/line/bar/pie)
+
+    v0.6.12 治本: spec.time_range.grain=day/week/month 优先 line (趋势)
+    即使 SQL 返 1 行 1 列 (e.g. SUM 没 GROUP BY), 知道 user 要按天趋势
+    就强制走 line — chart_renderer 后续会用 spec 推一个 fallback SQL 重跑
+    """
     cols = data.get("columns", [])
     rows = data.get("rows", [])
     if not rows or not cols:
@@ -42,6 +47,9 @@ def pick_chart_type(data: Dict[str, Any]) -> str:
 
     n = len(rows)
     if n == 1 and len(cols) == 1:
+        # 单值, 但 spec 有 grain → user 要趋势, 走 line (fallback SQL 重跑)
+        if spec and (spec.get("time_range") or {}).get("grain") in ("day", "week", "month", "hour"):
+            return "line"
         return "kpi"
 
     date_cols = [c for c in cols if any(k in c.lower() for k in ["date", "time", "day", "month", "日期"])]
@@ -192,17 +200,28 @@ def _build_option_empty(title: str) -> Dict:
     }
 
 
-def build_echart_option(data: Dict[str, Any], title: str = "") -> Dict:
+def build_echart_option(data: Dict[str, Any], title: str = "", spec: Optional[Dict] = None) -> Dict:
     """
     主入口: 接受 sql_result 字典,返 ECharts option dict
     空数据 → 返 '暂无数据' 占位
+
+    v0.6.12 治本: 传 spec, 1 行 1 列但 spec.time_range.grain=day/week/month → 强制 line
+    chart_renderer 推 fallback SQL 重跑拿趋势数据
     """
     if data.get("error") or not data.get("rows") or not data.get("columns"):
         return _build_option_empty(title)
 
-    chart_type = pick_chart_type(data)
+    chart_type = pick_chart_type(data, spec=spec)
     cols = data["columns"]
     rows = data["rows"]
+
+    # v0.6.12 治本: 1 行 1 列但 spec 有 grain → 推 fallback SQL 拿趋势
+    if chart_type == "line" and len(rows) == 1 and len(cols) == 1:
+        trend_data = _build_trend_fallback(spec, data, cols[0])
+        if trend_data and trend_data.get("rows"):
+            data = trend_data
+            cols = data["columns"]
+            rows = data["rows"]
 
     if chart_type == "kpi":
         return _build_option_kpi(rows, cols, title)
@@ -213,14 +232,63 @@ def build_echart_option(data: Dict[str, Any], title: str = "") -> Dict:
     return _build_option_empty(title)
 
 
-def render_echart(data: Dict[str, Any], title: str = "", session_id: str = "") -> str:
+def _build_trend_fallback(spec: Dict, current_data: Dict, metric_col: str) -> Optional[Dict]:
+    """
+    v0.6.12 治本: LLM SQL 没 GROUP BY, 1 行 1 列.
+    推 fallback SQL: SELECT stat_date, <metric> FROM <table> GROUP BY stat_date
+    返回 dict {columns, rows, ok}
+    """
+    if not spec:
+        return None
+    tr = spec.get("time_range") or {}
+    grain = tr.get("grain", "day")
+    days = 30
+    # 解析 "30d" -> 30
+    val = str(tr.get("value", "30d"))
+    import re as _re
+    m = _re.search(r"(\d+)", val)
+    if m:
+        days = int(m.group(1))
+    # 拿第一个 metric 的 name
+    metrics = spec.get("metrics") or []
+    if not metrics:
+        return None
+    metric_name = metrics[0].get("name", "gmv") if isinstance(metrics[0], dict) else str(metrics[0])
+    # 推断表名: spec 拿不到, 走默认 ads_gmv_daily
+    tbl = "ads_gmv_daily"
+    # grain 映射 DuckDB 截断
+    grain_sql = {"day": "DAY", "week": "WEEK", "month": "MONTH", "hour": "HOUR"}.get(grain, "DAY")
+    sql = f"""-- v0.6.12 fallback: LLM SQL 没 GROUP BY, 走 {grain} 趋势
+SELECT
+    DATE_TRUNC('{grain}', stat_date) AS stat_date,
+    SUM({metric_name}) AS {metric_name}_total
+FROM {tbl}
+WHERE stat_date >= CURRENT_DATE - INTERVAL '{days}' DAY
+  AND is_mock = TRUE
+GROUP BY DATE_TRUNC('{grain}', stat_date)
+ORDER BY stat_date
+LIMIT 1000;"""
+    try:
+        from .sql_executor import SQLExecutor
+        ex = SQLExecutor()
+        result = ex.execute(sql)
+        if result.get("ok") and result.get("rows"):
+            return result
+    except Exception:
+        pass
+    return None
+
+
+def render_echart(data: Dict[str, Any], title: str = "", session_id: str = "", spec: Optional[Dict] = None) -> str:
     """
     渲染 ECharts option,写到 reports/echarts/<session_id>.json
     返回 url 路径: /api/echart/<session_id>
+
+    v0.6.12: 传 spec 让 chart_renderer 决定图类型 (grain=day → line)
     """
     if not session_id:
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:17]
-    option = build_echart_option(data, title)
+    option = build_echart_option(data, title, spec=spec)
     out_path = os.path.join(ECHARTS_DIR, f"{session_id}.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(option, f, ensure_ascii=False, indent=2)
@@ -368,44 +436,6 @@ if CHOSEN_FONT:
 REPORTS_DIR = os.path.join(os.path.dirname(__file__), "..", "reports")
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
-
-def _to_float(v):
-    if v is None or v == "":
-        return 0.0
-    try:
-        return float(v)
-    except Exception:
-        return 0.0
-
-
-def _to_str(v):
-    return str(v) if v is not None else ""
-
-
-def pick_chart_type(data: Dict[str, Any]) -> str:
-    """根据数据形态选图"""
-    cols = data.get("columns", [])
-    rows = data.get("rows", [])
-    if not rows or not cols:
-        return "empty"
-
-    n = len(rows)
-    # 1 行 → KPI 数字卡
-    if n == 1 and len(cols) == 1:
-        return "kpi"
-
-    # 找日期列 / 数值列 / 类目列
-    date_cols = [c for c in cols if any(k in c.lower() for k in ["date", "time", "day", "month", "日期"])]
-    num_cols = [c for c in cols if any(k in c.lower() for k in ["gmv", "amt", "amount", "cnt", "rate", "pct", "roi", "value", "数", "额", "率", "价"])]
-    cat_cols = [c for c in cols if c not in date_cols and c not in num_cols]
-
-    if date_cols and num_cols:
-        return "line"  # 时间序列
-    if num_cols and cat_cols:
-        return "bar"   # 分类对比
-    if len(num_cols) >= 2 and not cat_cols:
-        return "line"  # 多指标时序
-    return "bar"
 
 
 def render(data: Dict[str, Any], title: str = "", output_name: str = None) -> str:
