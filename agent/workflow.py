@@ -14,6 +14,38 @@ from datetime import datetime
 from .agents import (
     RequirementClarifier, WarehouseUnderstander, SQLGenerator, ConclusionWriter
 )
+
+
+def _dict_to_markdown(d: Dict[str, Any]) -> str:
+    """
+    v0.6.10: dict → markdown 字符串 (auto_extract 按 ## 段切)
+    策略: 顶层 key 当段头 (## key), value 字符串化
+    - list: bullet list (- item)
+    - dict: 嵌套 (## key + 缩进)
+    """
+    lines = []
+    for k, v in d.items():
+        if isinstance(v, list):
+            lines.append(f"\n## {k}\n")
+            for item in v:
+                if isinstance(item, dict):
+                    # list 里的 dict → 嵌套成 sub-bullet
+                    lines.append(f"- **{item.get('hypothesis', item.get('name', str(list(item.keys())[0])))}**")
+                    for ik, iv in item.items():
+                        if ik not in ('hypothesis', 'name'):
+                            lines.append(f"  - {ik}: {iv}")
+                else:
+                    lines.append(f"- {item}")
+        elif isinstance(v, dict):
+            lines.append(f"\n## {k}\n")
+            for ik, iv in v.items():
+                lines.append(f"- **{ik}**: {iv}")
+        else:
+            lines.append(f"\n## {k}\n")
+            lines.append(str(v))
+    return "\n".join(lines).strip()
+
+
 from .llm_client import LLMClient, safe_json_loads
 from .sql_executor import SQLExecutor
 from .chart_renderer import render_echart
@@ -286,8 +318,16 @@ class DataAnalystWorkflow:
         # v0.5: 自动整理 BI 报告关键洞察入 KB (faiss + FTS5), 失败不抛
         try:
             from . import auto_extract
+            # v0.6.10 治本: writer.write 返 dict (BI 报告 JSON), 但 auto_extract
+            # 期望 markdown 字符串 (.strip() 才能用). 之前传 dict 报
+            # "'dict' object has no attribute 'strip'", added=0, 假装写但没真写.
+            # 治本: dict → markdown 字符串 (用 json.dumps + ## 段头格式, 让 auto_extract 能按段切)
+            if isinstance(st.conclusion, dict):
+                conclusion_md = _dict_to_markdown(st.conclusion)
+            else:
+                conclusion_md = st.conclusion or ""
             added, skipped = auto_extract.auto_extract_to_kb(
-                st.conclusion or "",
+                conclusion_md,
                 spec=st.spec,
                 session_id=st.session_id,
             )
