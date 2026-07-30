@@ -174,6 +174,25 @@ class RequirementClarifier:
                             "round": round_count,
                         }
         else:
+            # 兜底 open_questions 字段 (LLM 没填时根据 spec 反推)
+            if "open_questions" not in result or not result["open_questions"]:
+                spec = result.get("spec")
+                if spec and isinstance(spec, dict):
+                    # 已给 spec 但 open_questions 空, 推算还有啥没答
+                    needed = []
+                    if not spec.get("time_range") or spec.get("time_range", {}).get("_assumption"):
+                        needed.append("time_range")
+                    if not spec.get("dimensions"):
+                        needed.append("dimensions")
+                    if not spec.get("metrics"):
+                        needed.append("metric_definition")
+                    if not spec.get("comparison"):
+                        needed.append("comparison")
+                    if not spec.get("segmentation") or spec.get("segmentation") == "(未指定,默认全部)":
+                        needed.append("segmentation")
+                    result["open_questions"] = needed
+                else:
+                    result["open_questions"] = []
             # 校验 spec.user_confirmed 标记
             spec = result.get("spec")
             if spec and isinstance(spec, dict):
@@ -197,6 +216,12 @@ class RequirementClarifier:
                 spec.setdefault("assumptions", [])
                 spec.setdefault("user_confirmed", False)
                 spec.setdefault("is_mock_data", True)
+        # v0.6: 计算 pending_options (UI 按钮列表)
+        result["pending_options"] = self._build_pending_options(
+            result.get("phase", "clarifying"),
+            result.get("open_questions", []),
+            result.get("spec"),
+        )
         return result
 
     def _is_confirm(self, text: str) -> bool:
@@ -345,6 +370,76 @@ class RequirementClarifier:
             "output_preference": "both",
             "is_mock_data": True,
         }
+
+    def _build_pending_options(self, phase: str, open_questions: list, spec=None) -> list:
+        """
+        v0.6: 给 server 返 pending_options, UI 直接渲染 button 列表
+        - clarifying: 每个 open_question 给 2-3 个最相关选项 + 1 自由输入
+        - awaiting_confirmation: [确认, 修改, 跳过] 3 个
+        - ready: [] (无, user 应该已经确认)
+        """
+        opts = []
+        if phase == "clarifying":
+            # 每个 open_question 给 3 个最相关选项 (避免 12 个刷屏)
+            option_map = {
+                "time_range": [
+                    ("📅 最近 7 天", "7天"),
+                    ("📅 最近 30 天", "30天"),
+                    ("📅 最近 90 天", "90天"),
+                ],
+                "comparison": [
+                    ("📊 同比 (vs 去年)", "同比"),
+                    ("📊 环比 (vs 上期)", "环比"),
+                    ("📊 不对比 (裸值)", "不对比"),
+                ],
+                "metric_definition": [
+                    ("💰 含退单", "含退单"),
+                    ("💰 不含退单 (默认)", "不含退单"),
+                    ("💰 不扣减 (毛 GMV)", "不扣减"),
+                ],
+                "segmentation": [
+                    ("👥 新客 (首单)", "新客按首单"),
+                    ("👥 老客 (历史下过单)", "老客"),
+                    ("👥 不分层 (全部)", "不分层"),
+                ],
+                "dimensions": [
+                    ("📂 按品类拆", "按品类"),
+                    ("📂 按渠道拆", "按渠道"),
+                    ("📂 不拆维度", "不拆维度"),
+                ],
+                "filters": [
+                    ("🚫 排除测试", "排除测试"),
+                    ("🚫 不看 VIP", "不看VIP"),
+                    ("🚫 不额外过滤", "不过滤"),
+                ],
+            }
+            seen = set()
+            # 最多 3 个 question, 每个 question 给 3 个选项 (9 个 button, 跟 1 自由输入)
+            for q in (open_questions or [])[:3]:
+                for label, val in option_map.get(q, []):
+                    if val in seen:
+                        continue
+                    seen.add(val)
+                    opts.append({
+                        "kind": "select",
+                        "question": q,
+                        "label": label,
+                        "value": val,
+                    })
+            # 永远加一个"自由输入"按钮 (放最后)
+            opts.append({
+                "kind": "free_input",
+                "label": "✍️ 自由回答",
+                "value": None,
+            })
+        elif phase == "awaiting_confirmation":
+            opts = [
+                {"kind": "confirm", "label": "✅ 确认,开干", "value": "确认"},
+                {"kind": "edit", "label": "✏️ 修改某条", "value": None},
+                {"kind": "free_input", "label": "💬 补充说明", "value": None},
+            ]
+        # ready / 其他: [] 不返
+        return opts
 
     def _format_spec_for_confirm(self, spec) -> str:
         """格式化 spec 给 user 确认用"""

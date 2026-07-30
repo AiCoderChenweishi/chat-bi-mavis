@@ -37,10 +37,14 @@ class WorkflowState:
         self.llm_calls = 0
         self.created_at = datetime.now().isoformat()
         self.error: Optional[str] = None
+        # v0.6: UI 按钮选项 (clarifying / awaiting_confirmation 时填)
+        self.pending_options: List[Dict] = []
 
-    def add_assistant(self, content: str):
+    def add_assistant(self, content: str, pending_options: List[Dict] = None):
         self.history.append({"role": "assistant", "content": content})
         self.assistant_message = content
+        if pending_options is not None:
+            self.pending_options = pending_options
 
     def add_user(self, content: str):
         self.history.append({"role": "user", "content": content})
@@ -130,18 +134,19 @@ class DataAnalystWorkflow:
         st.round = result.get("round", st.round)
 
         phase = result.get("phase")
+        pending_opts = result.get("pending_options", [])
         if phase == "ready" and result.get("spec"):
             st.spec = result["spec"]
             st.phase = "warehouse_understanding"
-            st.add_assistant(result.get("reply", "口径已确认,开始理解数仓。"))
+            st.add_assistant(result.get("reply", "口径已确认,开始理解数仓。"), pending_options=[])
         elif phase == "awaiting_confirmation" and result.get("spec"):
             # 新阶段:等 user 显式确认
             st.spec = result["spec"]
             st.phase = "awaiting_confirmation"
-            st.add_assistant(result.get("reply", "请确认口径。"))
+            st.add_assistant(result.get("reply", "请确认口径。"), pending_options=pending_opts)
         else:
             reply = result.get("reply", "请补充信息")
-            st.add_assistant(reply)
+            st.add_assistant(reply, pending_options=pending_opts)
             # 还在 clarifying
 
     def _do_awaiting_confirmation(self, st: WorkflowState, user_message: str):
@@ -154,18 +159,19 @@ class DataAnalystWorkflow:
         st.round = result.get("round", st.round)
 
         phase = result.get("phase")
+        pending_opts = result.get("pending_options", [])
         if phase == "ready" and result.get("spec"):
             st.spec = result["spec"]
             st.phase = "warehouse_understanding"
-            st.add_assistant(result.get("reply", "✅ 确认收到,开始理解数仓。"))
+            st.add_assistant(result.get("reply", "✅ 确认收到,开始理解数仓。"), pending_options=[])
         elif phase == "awaiting_confirmation" and result.get("spec"):
             st.spec = result["spec"]
             st.phase = "awaiting_confirmation"
-            st.add_assistant(result.get("reply", "已更新口径,请再次确认。"))
+            st.add_assistant(result.get("reply", "已更新口径,请再次确认。"), pending_options=pending_opts)
         else:
             # user 改某条 → 回到 clarifying
             st.phase = "clarifying"
-            st.add_assistant(result.get("reply", "好的,改完再问。"))
+            st.add_assistant(result.get("reply", "好的,改完再问。"), pending_options=pending_opts)
 
     def _do_understand(self, st: WorkflowState):
         st.warehouse_plan = self.understander.understand(st.spec)

@@ -27,4 +27,6 @@ reports/*.png
 data/
 reports/echarts/
 warehouse/metadata.json
-static/js/
+
+# 第三方 JS 库 (1MB echarts 不入, 35KB marked + 22KB purify 入)
+static/js/echarts.min.js

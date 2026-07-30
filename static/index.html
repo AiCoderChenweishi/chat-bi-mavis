@@ -513,6 +513,59 @@
     }
     .chat-confirm .btn-edit:hover { background: #64748b; }
 
+    /* v0.6: pending_options 按钮 (通用, 任何 phase 都可能用) */
+    .pending-options {
+      margin: 8px 0;
+      padding: 8px 10px;
+      background: #1e293b;
+      border-left: 3px solid #60a5fa;
+      border-radius: 6px;
+    }
+    .pending-options .po-label {
+      font-size: 11px;
+      color: #93c5fd;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .pending-options .po-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pending-options .po-btn {
+      padding: 6px 12px;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      background: #0f172a;
+      color: #e6e6e6;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .pending-options .po-btn:hover { background: #334155; border-color: #60a5fa; }
+    .pending-options .po-btn.po-confirm { background: #16a34a; border-color: #16a34a; color: #fff; }
+    .pending-options .po-btn.po-confirm:hover { background: #15803d; }
+    .pending-options .po-btn.po-edit { background: #475569; border-color: #475569; color: #fff; }
+    .pending-options .po-btn.po-free_input { background: #1e3a8a; border-color: #1e3a8a; color: #fff; }
+
+    .pending-options .po-group { margin: 4px 0; }
+    .pending-options .po-q-label {
+      font-size: 11px; color: #cbd5e1; margin-bottom: 3px; font-weight: 500;
+    }
+    .pending-options .po-free-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid #334155; }
+
+    /* v0.6: msg 内部 markdown 渲染样式 */
+    .msg.assistant p, .msg.system p { margin: 4px 0; }
+    .msg.assistant strong, .msg.system strong { color: #fbbf24; }
+    .msg.assistant em, .msg.system em { color: #c4a5f7; font-style: normal; }
+    .msg.assistant ul, .msg.system ul { margin: 4px 0 4px 20px; }
+    .msg.assistant code, .msg.system code {
+      background: #0f172a; padding: 1px 4px; border-radius: 3px; font-size: 12px;
+    }
+    .msg.assistant pre, .msg.system pre {
+      background: #0f172a; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px;
+    }
+
     .chat-input-area {
       padding: 12px 14px;
       background: #131822;
@@ -970,6 +1023,8 @@
   </div>
 
 <script src="/static/js/echarts.min.js"></script>
+<script src="/static/js/marked.min.js"></script>
+<script src="/static/js/purify.min.js"></script>
 <script>
 let currentSessionId = null;
 let isWaiting = false;
@@ -1043,10 +1098,108 @@ function copySQL() {
   });
 }
 
+// v0.6: 通用 pending_options 渲染 (替代 showConfirmPanel)
+function renderPendingOptions(opts) {
+  // 删旧 option 区
+  const old = document.getElementById('pendingOptionsBox');
+  if (old) old.remove();
+  if (!opts || !opts.length) return;
+  const box = document.createElement('div');
+  box.id = 'pendingOptionsBox';
+  box.className = 'pending-options';
+  const label = document.createElement('div');
+  label.className = 'po-label';
+  label.textContent = '👇 点一个,或自己打字';
+  box.appendChild(label);
+  // 按 question 分组 (clarifying 多问号)
+  const groups = {};
+  const freeOpts = [];
+  for (const o of opts) {
+    if (o.kind === 'free_input' || o.kind === 'confirm' || o.kind === 'edit') {
+      freeOpts.push(o);
+    } else {
+      const q = o.question || '选择';
+      if (!groups[q]) groups[q] = [];
+      groups[q].push(o);
+    }
+  }
+  // 渲染 question 分组
+  const qLabels = {
+    time_range: '🕐 时间窗口',
+    comparison: '📊 对比基准',
+    metric_definition: '💰 指标口径',
+    segmentation: '👥 用户分层',
+    dimensions: '📂 拆解维度',
+    filters: '🚫 过滤条件',
+  };
+  for (const [q, items] of Object.entries(groups)) {
+    const grp = document.createElement('div');
+    grp.className = 'po-group';
+    const ql = document.createElement('div');
+    ql.className = 'po-q-label';
+    ql.textContent = qLabels[q] || q;
+    grp.appendChild(ql);
+    const row = document.createElement('div');
+    row.className = 'po-buttons';
+    for (const o of items) {
+      const b = document.createElement('button');
+      b.className = 'po-btn po-select';
+      b.textContent = o.label;
+      b.onclick = () => onOptionClick(o);
+      row.appendChild(b);
+    }
+    grp.appendChild(row);
+    box.appendChild(grp);
+  }
+  // 渲染 confirm / free (单行, 高亮)
+  if (freeOpts.length) {
+    const row = document.createElement('div');
+    row.className = 'po-buttons po-free-row';
+    for (const o of freeOpts) {
+      const b = document.createElement('button');
+      b.className = 'po-btn po-' + (o.kind || 'free_input');
+      b.textContent = o.label;
+      b.onclick = () => onOptionClick(o);
+      row.appendChild(b);
+    }
+    box.appendChild(row);
+  }
+  document.getElementById('chatMessages').appendChild(box);
+  box.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function onOptionClick(o) {
+  // 删掉 button 列表 (避免重复点)
+  const old = document.getElementById('pendingOptionsBox');
+  if (old) old.remove();
+  if (o.kind === 'free_input' || o.value === null) {
+    // 聚焦输入框
+    const input = document.getElementById('userInput');
+    input.value = '';
+    input.placeholder = o.kind === 'edit' ? '请告诉我你想改哪条:' : '自由回答...';
+    input.focus();
+    return;
+  }
+  // 直接发
+  addMessage('user', o.label);
+  send(o.value);
+}
+
 function addMessage(role, content) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
-  div.textContent = content;
+  // v0.6: 用 marked.js 渲染 markdown (assistant / system 走 markdown, user 走纯文本)
+  if ((role === 'assistant' || role === 'system') && content) {
+    // marked.parse 同步返 HTML, DOMPurify 防 XSS
+    if (window.marked && window.DOMPurify) {
+      const html = window.marked.parse(String(content));
+      div.innerHTML = window.DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+    } else {
+      div.textContent = content;
+    }
+  } else {
+    div.textContent = content;
+  }
   document.getElementById('chatMessages').appendChild(div);
   div.scrollIntoView({ behavior: 'smooth', block: 'end' });
   // 展开沟通区
@@ -1326,28 +1479,25 @@ function esc(s) {
     .replace(/'/g, '&#39;');
 }
 
-// 显示确认按钮(口径卡)
+// 显示确认按钮(口径卡) - v0.6: 改用 renderPendingOptions 通用
 function showConfirmPanel(spec) {
   pendingSpec = spec;
-  const panel = document.getElementById('chatConfirm');
-  panel.classList.add('show');
-  // 在沟通区追加系统消息
   addMessage('system', '📋 口径已整理,见左侧主区。请确认后再继续。');
+  // 后端会推 pending_options, 这儿占位 (兼容老调用)
 }
 
 function confirmSpec() {
   if (!currentSessionId) return;
-  // 发 "确认" 给后端
-  document.getElementById('chatConfirm').classList.remove('show');
   pendingSpec = null;
   addMessage('user', '✅ 确认,按这个口径跑');
-  send('confirm');
+  send('确认');
 }
 
 function editSpec() {
-  document.getElementById('chatConfirm').classList.remove('show');
-  document.getElementById('userInput').value = '改一下口径:';
-  document.getElementById('userInput').focus();
+  const input = document.getElementById('userInput');
+  input.value = '';
+  input.placeholder = '请告诉我你想改哪条:';
+  input.focus();
 }
 
 async function send(overrideText) {
@@ -1363,7 +1513,123 @@ async function send(overrideText) {
   // 用户消息只在 override 时不显示(已在 addMessage 中显示)
   if (!overrideText) addMessage('user', text);
 
-  addThinking();
+  // v0.6: 用 SSE 流式 (打字机效果)
+  // 不管新老会话都走 /api/chat/stream
+  removeThinking();
+  const isNew = !currentSessionId;
+  const url = isNew ? '/api/chat/stream' : `/api/chat/${currentSessionId}/stream`;
+
+  // 先加一个空的 assistant bubble, 边收边填
+  const assistantBubble = addMessage('assistant', '');
+  // 流式模式: 直接 innerText 拼接 (不用 markdown, 边收边显)
+  assistantBubble.classList.add('streaming');
+  let buffer = '';
+
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body: JSON.stringify({ message: text }),
+    });
+    if (!r.ok || !r.body) {
+      throw new Error(`HTTP ${r.status}`);
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let pending = '';
+    let finalData = null;
+    let pendingOpts = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      pending += decoder.decode(value, { stream: true });
+      // SSE 格式: data: {json}\n\n, 多个 event 可能一个 chunk
+      const parts = pending.split('\n\n');
+      pending = parts.pop();  // 留最后可能不完整
+      for (const part of parts) {
+        if (!part.startsWith('data:')) continue;
+        const jsonStr = part.slice(5).trim();
+        if (!jsonStr) continue;
+        try {
+          const evt = JSON.parse(jsonStr);
+          if (evt.event === 'chunk') {
+            buffer += evt.delta || '';
+            // 流式: 只显示 buffer (等 done 时再走 markdown 渲染)
+            assistantBubble.textContent = buffer;
+            assistantBubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          } else if (evt.event === 'phase') {
+            // 阶段切换: 在 phaseBar 上标 (不更新 bubble)
+            updatePhaseBar(evt.phase);
+          } else if (evt.event === 'done') {
+            finalData = evt;
+            pendingOpts = evt.pending_options || [];
+          } else if (evt.event === 'error') {
+            throw new Error(evt.error || 'stream error');
+          }
+        } catch (e) {
+          // skip malformed chunk
+        }
+      }
+    }
+    // 流结束, 渲染最终 reply (用 markdown)
+    if (finalData) {
+      // 用 markdown 重新渲染 (流式期间只用 textContent)
+      if (window.marked && window.DOMPurify && finalData.reply) {
+        const html = window.marked.parse(String(finalData.reply));
+        assistantBubble.innerHTML = window.DOMPurify.sanitize(html, { ADD_ATTR: ['target'] });
+      } else {
+        assistantBubble.textContent = finalData.reply || buffer;
+      }
+      assistantBubble.classList.remove('streaming');
+      currentSessionId = finalData.state.session_id || currentSessionId;
+      const s = finalData.state || {};
+
+      // === v0.2 顶部 KB save button 钩子 ===
+      const btnKb = document.getElementById('btn-save-kb');
+      if (btnKb && !btnKb.dataset._bound) {
+        btnKb.dataset._bound = '1';
+        btnKb.addEventListener('click', () => {
+          const tmp = document.createElement('div');
+          tmp.innerHTML = document.body.innerHTML;
+          tmp.querySelectorAll('.btn-kb-save, .kb-save-toast').forEach(n => n.remove());
+          const text = (tmp.innerText || '').trim();
+          kbSaveToKB('page_top', text);
+        });
+      }
+      // (kbSaveToKB 函数在下面)
+      const fn = (typeof window.kbSaveToKB === 'function') ? window.kbSaveToKB : null;
+      if (fn && !window._kbSaveBound) {
+        window._kbSaveBound = true;
+        // 已在内部绑定
+      }
+
+      // 更新 phaseBar + 报告区
+      updatePhaseBar(finalData.phase);
+      renderReport(s);
+      const sqlBlock = document.getElementById('sqlBlock');
+      if (s.sql) sqlBlock.innerHTML = highlightSQL(s.sql);
+
+      // 渲染 pending_options
+      if (pendingOpts.length) renderPendingOptions(pendingOpts);
+      // 兼容 awaiting_confirmation
+      if (finalData.phase === 'awaiting_confirmation' && s.spec) {
+        showConfirmPanel(s.spec);
+      } else {
+        document.getElementById('chatConfirm').classList.remove('show');
+      }
+    } else {
+      assistantBubble.textContent = buffer || '(无响应)';
+      assistantBubble.classList.remove('streaming');
+    }
+  } catch (e) {
+    assistantBubble.classList.remove('streaming');
+    assistantBubble.textContent = '❌ 请求失败: ' + e.message;
+  } finally {
+    isWaiting = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+  return;
+  // (下面的旧非流式代码保留, 不会执行)
   try {
     let resp, data;
     if (!currentSessionId) {
@@ -1467,7 +1733,11 @@ async function send(overrideText) {
       addMessage('system', '❌ 错误: ' + (s.error || '未知'));
     }
 
-    // 等 user 确认
+    // v0.6: 渲染 pending_options 按钮 (澄清 / 确认 阶段)
+    if (data.pending_options && data.pending_options.length) {
+      renderPendingOptions(data.pending_options);
+    }
+    // 等 user 确认 (兼容老 chatConfirm 面板)
     if (data.phase === 'awaiting_confirmation' && s.spec) {
       showConfirmPanel(s.spec);
     } else {

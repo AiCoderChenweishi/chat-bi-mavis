@@ -22,10 +22,12 @@ v0.2 KB + RAG (2026-07-29):
 import os
 import json
 import re
+import asyncio
+import time
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -55,6 +57,7 @@ class NewChatResp(BaseModel):
     reply: str
     phase: str
     is_question: bool
+    pending_options: list = []  # v0.6: UI 按钮列表 (clarifying / awaiting_confirmation)
 
 
 class KBEntryIn(BaseModel):
@@ -85,13 +88,14 @@ def chat_new(req: NewChatReq):
     """开新会话,跑一轮"""
     st = workflow.new_session(req.message)
     workflow.step(st.session_id, req.message)
-    is_question = (st.phase == "clarifying")
+    is_question = st.phase in ("clarifying", "awaiting_confirmation")
     return NewChatResp(
         session_id=st.session_id,
         state=st.to_public_dict(),
         reply=st.assistant_message,
         phase=st.phase,
         is_question=is_question,
+        pending_options=st.pending_options or [],
     )
 
 
@@ -115,6 +119,7 @@ def chat_step(session_id: str, req: StepReq):
         reply=st.assistant_message or _phase_default_message(st.phase),
         phase=st.phase,
         is_question=is_question,
+        pending_options=st.pending_options or [],
     )
 
 
@@ -137,6 +142,97 @@ def _phase_default_message(phase: str) -> str:
         "done": "分析完成",
         "error": "出错了",
     }.get(phase, phase)
+
+
+# ---- v0.6 SSE 流式输出 ----
+# 设计: server 一边 phase 推进一边 yield SSE event, UI 边收边显
+# 事件类型:
+#   {"event":"phase","phase":"warehouse_understanding"} - 阶段切换
+#   {"event":"typing","delta":"正在"} - 打字机流式
+#   {"event":"chunk","delta":"xx"} - 一段长文本 chunk
+#   {"event":"done","state":{...},"reply":"","pending_options":[...]} - 完成
+#   {"event":"error","error":"..."} - 出错
+async def _stream_chat(session_id: str, message: str, is_new: bool):
+    """SSE generator: 推进一轮 + (auto) 跑完后续阶段, 边跑边 yield 进度"""
+    try:
+        if is_new:
+            st = workflow.new_session(message)
+        else:
+            st = workflow.get_state(session_id) if session_id in workflow.sessions else None
+            if st is None:
+                yield f"data: {json.dumps({'event':'error','error':'session not found'})}\n\n"
+                return
+        # 跑一轮 (先做本轮 clarifier / 等确认)
+        # 注意: workflow.step() 是 sync, 阻塞; 异步包装用 asyncio.to_thread 避免 block event loop
+        st = await asyncio.to_thread(workflow.step, st.session_id, message)
+        # 阶段流式
+        prev_phase = None
+        # 如果本轮停在 clarifying / awaiting_confirmation, 直接发 done (不跑后续)
+        if st.phase in ("clarifying", "awaiting_confirmation", "done", "error"):
+            reply = st.assistant_message or _phase_default_message(st.phase)
+            # 打字机效果: 拆字符, 每 30ms 一个 chunk
+            for i in range(0, len(reply), 6):
+                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+6]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.025)
+            yield f"data: {json.dumps({'event':'done','state':st.to_public_dict(),'reply':reply,'pending_options':st.pending_options or [],'phase':st.phase}, ensure_ascii=False)}\n\n"
+            return
+        # 否则一路 run_through, 阶段切换时打字机流
+        yield f"data: {json.dumps({'event':'phase','phase':st.phase})}\n\n"
+        prev_phase = st.phase
+        # 打 assistant 初始 reply (如果有)
+        if st.assistant_message:
+            reply = st.assistant_message
+            for i in range(0, len(reply), 6):
+                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+6]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.02)
+        # 跑后续阶段
+        max_phases = 6
+        while st.phase not in ("clarifying", "awaiting_confirmation", "done", "error") and max_phases > 0:
+            await asyncio.to_thread(workflow.step, st.session_id)
+            if st.phase != prev_phase:
+                yield f"data: {json.dumps({'event':'phase','phase':st.phase})}\n\n"
+                prev_phase = st.phase
+            # 每个阶段打字机
+            phase_msg = _phase_default_message(st.phase)
+            for i in range(0, len(phase_msg), 6):
+                yield f"data: {json.dumps({'event':'chunk','delta': phase_msg[i:i+6]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.02)
+            max_phases -= 1
+        # 跑完, 推送最终 state
+        reply_final = st.assistant_message or _phase_default_message(st.phase)
+        yield f"data: {json.dumps({'event':'done','state':st.to_public_dict(),'reply':reply_final,'pending_options':st.pending_options or [],'phase':st.phase}, ensure_ascii=False)}\n\n"
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        yield f"data: {json.dumps({'event':'error','error':str(e),'trace':tb}, ensure_ascii=False)}\n\n"
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_new(req: NewChatReq):
+    """新会话 + 流式 (SSE)"""
+    return StreamingResponse(
+        _stream_chat("", req.message, is_new=True),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",  # 禁 nginx buffer
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.post("/api/chat/{session_id}/stream")
+async def chat_stream_step(session_id: str, req: StepReq):
+    """续推 + 流式 (SSE)"""
+    return StreamingResponse(
+        _stream_chat(session_id, req.message or "", is_new=False),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ---- 静态资源 ----
