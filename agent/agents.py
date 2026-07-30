@@ -232,16 +232,23 @@ class RequirementClarifier:
         return result
 
     def _is_confirm(self, text: str) -> bool:
-        """user 这句话是不是"显式确认"了"""
+        """user 这句话是不是"显式确认"了 — 用 word boundary 避免误判 ('对比' 含 '对' 不是确认)"""
+        import re
         t = (text or "").strip()
         if not t:
             return False
-        keywords = ["确认", "OK", "ok", "就这样", "可以", "你看着办", "对的", "对", "yes", "Yes", "YES", "按这个跑", "开干", "go", "Go", "GO"]
-        for kw in keywords:
-            if kw in t:
-                # 但如果有"改"就不算
-                if any(mod in t for mod in ["改", "不是", "不对", "换成", "instead"]):
-                    return False
+        # v0.6.5 治本: 用 \b word boundary 匹配, 避免 '对比' 误判 '对'
+        keywords = [
+            r"\b确认\b", r"^OK$", r"^ok$", r"^OK\b", r"^ok\b",
+            r"就这样", r"你看着办", r"按这个跑", r"按这个口径", r"开干",
+            r"^是$", r"^对$", r"^对的$", r"^yes$", r"^Yes$", r"^YES$",
+            r"^go$", r"^Go$", r"^GO$",
+        ]
+        # 但如果有"改" / "不是" / "不对" / "换成" → 否定语境, 不算确认
+        if any(mod in t for mod in ["改", "不是", "不对", "换成", "instead", "别的", "不是这个"]):
+            return False
+        for pat in keywords:
+            if re.search(pat, t):
                 return True
         return False
 

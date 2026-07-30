@@ -135,11 +135,29 @@ class DataAnalystWorkflow:
 
         phase = result.get("phase")
         pending_opts = result.get("pending_options", [])
-        if phase == "ready" and result.get("spec"):
-            st.spec = result["spec"]
-            st.phase = "warehouse_understanding"
-            st.add_assistant(result.get("reply", "口径已确认,开始理解数仓。"), pending_options=[])
-        elif phase == "awaiting_confirmation" and result.get("spec"):
+        spec = result.get("spec")
+        # v0.6.5 治本: 不信 LLM 跳 confirmation, spec 完整 + user 没显式确认 → 强制 awaiting_confirmation
+        if spec and isinstance(spec, dict):
+            # user 显式确认了 ("确认" / "OK" / "就这样" / button value 包含 "确认") → 走 ready
+            user_explicitly_confirmed = self.clarifier._is_confirm(user_message or "") or "确认" in (user_message or "")
+            # LLM 标 user_confirmed 不算, 必须 user 显式
+            if phase == "ready" and user_explicitly_confirmed:
+                spec["user_confirmed"] = True
+                st.spec = spec
+                st.phase = "warehouse_understanding"
+                st.add_assistant(result.get("reply", "口径已确认,开始理解数仓。"), pending_options=[])
+                return
+            elif phase == "ready" or (spec and spec.get("user_confirmed")):
+                # spec 完整但 user 没点确认 → 强制 awaiting_confirmation
+                st.spec = spec
+                spec["user_confirmed"] = False  # 强制覆盖 LLM
+                confirm_opts = self.clarifier._build_pending_options("awaiting_confirmation", [], spec)
+                st.phase = "awaiting_confirmation"
+                rc = self.clarifier
+                confirm_reply = rc._format_spec_for_confirm(spec)
+                st.add_assistant(confirm_reply, pending_options=confirm_opts)
+                return
+        if phase == "awaiting_confirmation" and result.get("spec"):
             # 新阶段:等 user 显式确认
             st.spec = result["spec"]
             st.phase = "awaiting_confirmation"
@@ -153,21 +171,31 @@ class DataAnalystWorkflow:
         """user 看到口径卡,可以确认 / 改某条"""
         if user_message:
             st.add_user(user_message)
-        # 再让 clarifier 处理一次:可能是 "确认" → ready,可能是 "改 X" → 回到 clarifying
+        # user 显式点 ✅ 确认 button (value 包含 "确认") → 走 ready
+        if self.clarifier._is_confirm(user_message or "") or "确认" in (user_message or ""):
+            # 走 ready (强制)
+            st.spec["user_confirmed"] = True
+            st.phase = "warehouse_understanding"
+            st.add_assistant("✅ 确认收到,开始理解数仓。", pending_options=[])
+            return
+        # 不是确认 → 让 clarifier 解析 (可能是改某条 → 回 clarifying)
         result = self.clarifier.parse(st.history, user_message)
         st.llm_calls += 1
         st.round = result.get("round", st.round)
 
         phase = result.get("phase")
         pending_opts = result.get("pending_options", [])
-        if phase == "ready" and result.get("spec"):
-            st.spec = result["spec"]
-            st.phase = "warehouse_understanding"
-            st.add_assistant(result.get("reply", "✅ 确认收到,开始理解数仓。"), pending_options=[])
-        elif phase == "awaiting_confirmation" and result.get("spec"):
-            st.spec = result["spec"]
+        spec = result.get("spec")
+        # 任何 spec 完整但没显式确认 → 强制 awaiting_confirmation
+        if spec and isinstance(spec, dict):
+            st.spec = spec
+            spec["user_confirmed"] = False
+            confirm_opts = self.clarifier._build_pending_options("awaiting_confirmation", [], spec)
             st.phase = "awaiting_confirmation"
-            st.add_assistant(result.get("reply", "已更新口径,请再次确认。"), pending_options=pending_opts)
+            rc = self.clarifier
+            confirm_reply = rc._format_spec_for_confirm(spec)
+            st.add_assistant(confirm_reply, pending_options=confirm_opts)
+            return
         else:
             # user 改某条 → 回到 clarifying
             st.phase = "clarifying"
