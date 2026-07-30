@@ -210,6 +210,22 @@ class DataAnalystWorkflow:
         st.conclusion = self.writer.write(st.spec, st.sql_result, st.chart_path)
         st.llm_calls += 1
         st.phase = "done"
+        # v0.5: 自动整理 BI 报告关键洞察入 KB (faiss + FTS5), 失败不抛
+        try:
+            from . import auto_extract
+            added, skipped = auto_extract.auto_extract_to_kb(
+                st.conclusion or "",
+                spec=st.spec,
+                session_id=st.session_id,
+            )
+            if added:
+                st.add_assistant(
+                    f"\n\n---\n💾 **已自动入知识库** {added} 条洞察 (下次 query RAG 自动召回, 标记 [auto] 区分手动/自动)"
+                )
+        except Exception as e:
+            # 治本: auto_extract 失败不阻断流程, 只 log
+            import logging
+            logging.getLogger(__name__).warning(f"auto_extract 失败, 不影响结论: {e}")
 
     def run_through(self, session_id: str) -> WorkflowState:
         """一路跑到 done(在 ready 后)"""
