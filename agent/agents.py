@@ -429,40 +429,15 @@ class RequirementClarifier:
         - clarifying: 列齐 7 槽位里所有缺的, 每个 slot 给 2 个最相关 (7×2+1=15, 不刷屏)
         - awaiting_confirmation: [确认, 修改, 跳过] 3 个
         - ready: [] (无, user 应该已经确认)
+
+        v0.6.14 治本: 按 user query 关键词 + metadata 推 dynamic options
+        不再 hardcode GMV/订单量 (用户问"留存"也推 GMV, 不合理)
         """
         opts = []
         if phase == "clarifying":
-            # v0.6.2 治本: 列齐所有缺 (不只 3 个)
-            option_map = {
-                "time_range": [
-                    ("📅 最近 30 天 (默认)", "30天"),
-                    ("📅 最近 7 天", "7天"),
-                ],
-                "metrics": [
-                    ("📊 GMV (销售额)", "GMV"),
-                    ("📊 订单量", "订单量"),
-                ],
-                "metric_definition": [
-                    ("💰 不含退单 (默认)", "不含退单"),
-                    ("💰 含退单", "含退单"),
-                ],
-                "dimensions": [
-                    ("📂 按品类拆", "按品类"),
-                    ("📂 不拆维度 (汇总)", "不拆维度"),
-                ],
-                "comparison": [
-                    ("📈 同比 (vs 去年)", "同比"),
-                    ("📈 不对比 (裸趋势)", "不对比"),
-                ],
-                "segmentation": [
-                    ("👥 不分层 (全部)", "不分层"),
-                    ("👥 新客 (首单)", "新客按首单"),
-                ],
-                "filters": [
-                    ("🚫 不额外过滤 (默认)", "不过滤"),
-                    ("🚫 排除测试", "排除测试"),
-                ],
-            }
+            # v0.6.14 治本: 按 query 关键词推 dynamic options
+            query = (spec or {}).get("original_query", "") if spec else ""
+            option_map = self._build_dynamic_option_map(query, open_questions or [])
             seen = set()
             # 一次列所有缺 (不限 3)
             for q in (open_questions or []):
@@ -490,6 +465,150 @@ class RequirementClarifier:
             ]
         # ready / 其他: [] 不返
         return opts
+
+    def _build_dynamic_option_map(self, query: str, open_questions: list) -> dict:
+        """
+        v0.6.14 治本: 按 user query 关键词推 dynamic options
+        不再 hardcode GMV/订单量 (用户问"留存"也推 GMV, 不合理)
+        按 query 关键词匹配置信业务场景:
+        - "留存/复购" → ads_user_retention / dwd_trade_order
+        - "ROI/券" → ads_coupon_roi
+        - "漏斗/转化" → ads_conversion_funnel
+        - "PV/UV/流量" → dwd_traffic_visit
+        - "DAU/MAU/活跃" → dws_trade_user_day
+        - "客单/AOV" → GMV/order_cnt
+        - "GMV/营收" (默认) → ads_gmv_daily
+        """
+        q = (query or "").lower()
+        # 通用 default (time / comparison / filters, 所有 query 都有)
+        result = {
+            "time_range": [
+                ("📅 最近 30 天 (默认)", "30天"),
+                ("📅 最近 7 天", "7天"),
+                ("📅 最近 90 天", "90天"),
+            ],
+            "comparison": [
+                ("📈 同比 (vs 去年)", "同比"),
+                ("📈 环比 (vs 上期)", "环比"),
+                ("📈 不对比 (裸趋势)", "不对比"),
+            ],
+            "filters": [
+                ("🚫 不额外过滤 (默认)", "不过滤"),
+                ("🚫 排除测试数据", "排除测试"),
+                ("🚫 排除 is_mock=true", "排除mock"),
+            ],
+        }
+        if any(kw in q for kw in ["留存", "retention", "复购", "回购"]):
+            result["metrics"] = [
+                ("📊 次日留存率", "次日留存"),
+                ("📊 7 日留存率", "7日留存"),
+                ("📊 30 日留存率", "30日留存"),
+                ("📊 复购率", "复购率"),
+            ]
+            result["metric_definition"] = [
+                ("⏱️ 7 日内下过 ≥2 单算复购", "7日复购"),
+                ("⏱️ 30 日内下过 ≥2 单", "30日复购"),
+                ("⏱️ 按注册日算 (cohort)", "按注册日"),
+            ]
+            result["dimensions"] = [
+                ("📂 按注册月 cohort", "按cohort"),
+                ("📂 按新老客", "按新老客"),
+            ]
+            result["segmentation"] = [
+                ("👥 新客 (首单)", "新客按首单"),
+                ("👥 老客 (历史下过单)", "老客"),
+            ]
+        elif any(kw in q for kw in ["roi", "券", "优惠", "coupon"]):
+            result["metrics"] = [
+                ("📊 ROI (gmv_driven / coupon_amt)", "ROI"),
+                ("📊 券面额 (coupon_amt)", "券面额"),
+                ("📊 带动 GMV (gmv_driven)", "带动GMV"),
+            ]
+            result["metric_definition"] = [
+                ("💰 ROI = GMV / 券面额", "ROI_v1"),
+                ("💰 ROI = GMV / (券面额+运营成本)", "ROI_v2"),
+            ]
+            result["dimensions"] = [
+                ("📂 按券类型 (coupon_type)", "按券类型"),
+                ("📂 按日期", "按日期"),
+            ]
+        elif any(kw in q for kw in ["漏斗", "转化", "funnel"]):
+            result["metrics"] = [
+                ("📊 浏览→加购 (pv_to_cart)", "pv_to_cart"),
+                ("📊 加购→下单 (cart_to_order)", "cart_to_order"),
+                ("📊 下单→支付 (order_to_pay)", "order_to_pay"),
+            ]
+            result["metric_definition"] = [
+                ("💰 各步转化率 (按漏斗定义)", "漏斗v1"),
+                ("💰 整体转化率 (PV→支付)", "整体转化"),
+            ]
+            result["dimensions"] = [
+                ("📂 按渠道 (channel)", "按渠道"),
+                ("📂 按日期", "按日期"),
+            ]
+        elif any(kw in q for kw in ["pv", "uv", "流量", "访问", "访客"]):
+            result["metrics"] = [
+                ("📊 PV (page view)", "PV"),
+                ("📊 UV (unique visitor)", "UV"),
+                ("📊 跳出率", "跳出率"),
+            ]
+            result["metric_definition"] = [
+                ("⏱️ PV = 页面浏览次数", "PV_def"),
+                ("⏱️ UV = 去重访客数", "UV_def"),
+            ]
+            result["dimensions"] = [
+                ("📂 按渠道", "按渠道"),
+                ("📂 按页面", "按页面"),
+            ]
+        elif any(kw in q for kw in ["dau", "mau", "活跃", "在线", "用户数"]):
+            result["metrics"] = [
+                ("📊 DAU (日活)", "DAU"),
+                ("📊 MAU (月活)", "MAU"),
+                ("📊 新增用户", "新增用户"),
+            ]
+            result["metric_definition"] = [
+                ("⏱️ DAU = 当日登录去重 user", "DAU_def"),
+                ("⏱️ MAU = 30 日滑窗活跃", "MAU_def"),
+            ]
+            result["dimensions"] = [
+                ("📂 按日期", "按日期"),
+                ("📂 按新老客", "按新老客"),
+            ]
+        elif any(kw in q for kw in ["客单", "aov", "arpu", "单均价"]):
+            result["metrics"] = [
+                ("📊 客单价 (GMV/已支付订单)", "客单价"),
+                ("📊 ARPU", "ARPU"),
+            ]
+            result["metric_definition"] = [
+                ("💰 客单价 = GMV / 订单数", "AOV_v1"),
+            ]
+            result["dimensions"] = [
+                ("📂 按品类", "按品类"),
+                ("📂 按新老客", "按新老客"),
+            ]
+        else:
+            # 默认: GMV / 销售额 / 营收 (或没匹配任何关键词)
+            result["metrics"] = [
+                ("📊 GMV (销售额)", "GMV"),
+                ("📊 订单量 (order_cnt)", "订单量"),
+                ("📊 用户数 (user_cnt)", "用户数"),
+            ]
+            result["metric_definition"] = [
+                ("💰 不含退单 (默认)", "不含退单"),
+                ("💰 含退单", "含退单"),
+                ("💰 不扣减 (毛 GMV)", "不扣减"),
+            ]
+            result["dimensions"] = [
+                ("📂 按品类 (category_l1)", "按品类"),
+                ("📂 按渠道 (channel)", "按渠道"),
+                ("📂 不拆维度 (汇总)", "不拆维度"),
+            ]
+            result["segmentation"] = [
+                ("👥 不分层 (全部)", "不分层"),
+                ("👥 新客 (首单)", "新客按首单"),
+                ("👥 老客 (历史下过单)", "老客"),
+            ]
+        return result
 
     def _format_spec_for_confirm(self, spec) -> str:
         """格式化 spec 给 user 确认用"""
