@@ -120,8 +120,49 @@ class DataAnalystWorkflow:
         elif st.phase == "writing_conclusion":
             self._do_conclusion(st)
         elif st.phase == "done":
-            pass
+            # v0.6.9 治本: done 阶段 user 再发 = 开新分析 (重置 session)
+            # 旧 bug: SSE 流 yield 上次 assistant_message, user 看到同样回复
+            if user_message and user_message.strip():
+                # 显式 user 发消息 (不是空 push), 视为新需求
+                # 重置 session state
+                st.history = [{"role": "user", "content": user_message.strip()}]
+                st.spec = None
+                st.warehouse_plan = None
+                st.sql = None
+                st.sql_result = None
+                st.chart_path = None
+                st.conclusion = None
+                st.assistant_message = ""
+                st.error = None
+                st.round = 0
+                st.llm_calls = 0
+                st.pending_options = []
+                st.phase = "clarifying"
+                # 跑一轮 _do_clarify
+                self._do_clarify(st, user_message.strip())
+            # else: 空消息, 啥也不做 (防止 SSE 流误推老 reply)
 
+        return st
+
+    def reset_session(self, session_id: str, new_query: str) -> WorkflowState:
+        """v0.6.9: 显式重置 session 到新 query (新分析)"""
+        st = self.sessions.get(session_id)
+        if not st:
+            raise ValueError(f"session 不存在: {session_id}")
+        st.history = [{"role": "user", "content": new_query.strip()}]
+        st.spec = None
+        st.warehouse_plan = None
+        st.sql = None
+        st.sql_result = None
+        st.chart_path = None
+        st.conclusion = None
+        st.assistant_message = ""
+        st.error = None
+        st.round = 0
+        st.llm_calls = 0
+        st.pending_options = []
+        st.phase = "clarifying"
+        self._do_clarify(st, new_query.strip())
         return st
 
     # ---- 阶段实现 ----
