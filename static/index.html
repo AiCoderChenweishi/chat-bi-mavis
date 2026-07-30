@@ -1171,11 +1171,6 @@ function renderPendingOptions(opts) {
   box.className = 'pending-options';
   const label = document.createElement('div');
   label.className = 'po-label';
-  // 进度 (已选 N/总, 总 = 必选槽位数, 必选 = 不要 free_input / confirm / edit)
-  const requiredCount = opts.filter(o => o.kind === 'select').length;
-  const groupCount = Object.keys(groups).length;
-  label.textContent = `👇 多选,每行选 1 个,选完点提交 · 还差 ${groupCount} 项`;
-  box.appendChild(label);
   // 按 question 分组
   const groups = {};
   const freeOpts = [];
@@ -1188,6 +1183,9 @@ function renderPendingOptions(opts) {
       groups[q].push(o);
     }
   }
+  const groupCount = Object.keys(groups).length;
+  label.textContent = `👇 多选,每行选 1 个,选完点提交 · 还差 ${groupCount} 项`;
+  box.appendChild(label);
   const qLabels = {
     time_range: '🕐 时间窗口',
     comparison: '📊 对比基准',
