@@ -171,9 +171,9 @@ async def _stream_chat(session_id: str, message: str, is_new: bool):
         if st.phase in ("clarifying", "awaiting_confirmation", "done", "error"):
             reply = st.assistant_message or _phase_default_message(st.phase)
             # 打字机效果: 3 字符/65ms ≈ 46 字符/秒 (中文友好, 像真人快读)
-            for i in range(0, len(reply), 3):
-                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+3]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.065)
+            for i in range(0, len(reply), 1):
+                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+1]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.12)
             yield f"data: {json.dumps({'event':'done','state':st.to_public_dict(),'reply':reply,'pending_options':st.pending_options or [],'phase':st.phase}, ensure_ascii=False)}\n\n"
             return
         # 否则一路 run_through, 阶段切换时打字机流
@@ -182,9 +182,9 @@ async def _stream_chat(session_id: str, message: str, is_new: bool):
         # 打 assistant 初始 reply (如果有)
         if st.assistant_message:
             reply = st.assistant_message
-            for i in range(0, len(reply), 3):
-                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+3]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.06)
+            for i in range(0, len(reply), 1):
+                yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+1]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.12)
         # 跑后续阶段
         max_phases = 6
         while st.phase not in ("clarifying", "awaiting_confirmation", "done", "error") and max_phases > 0:
@@ -194,9 +194,9 @@ async def _stream_chat(session_id: str, message: str, is_new: bool):
                 prev_phase = st.phase
             # 每个阶段打字机 (短消息, 3 字符/65ms)
             phase_msg = _phase_default_message(st.phase)
-            for i in range(0, len(phase_msg), 3):
-                yield f"data: {json.dumps({'event':'chunk','delta': phase_msg[i:i+3]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.065)
+            for i in range(0, len(phase_msg), 1):
+                yield f"data: {json.dumps({'event':'chunk','delta': phase_msg[i:i+1]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.12)
             max_phases -= 1
         # 跑完, 推送最终 state
         reply_final = st.assistant_message or _phase_default_message(st.phase)
