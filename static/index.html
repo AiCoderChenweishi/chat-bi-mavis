@@ -554,6 +554,49 @@
     }
     .pending-options .po-free-row { margin-top: 8px; padding-top: 8px; border-top: 1px solid #334155; }
 
+    /* v0.6.1: 多选 + 提交 */
+    .pending-options .po-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed #334155;
+    }
+    .pending-options .po-sel-text {
+      flex: 1;
+      font-size: 12px;
+      color: #94a3b8;
+      font-style: italic;
+    }
+    .pending-options .po-btn.po-submit {
+      background: #16a34a;
+      border-color: #16a34a;
+      color: #fff;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 6px;
+    }
+    .pending-options .po-btn.po-submit:hover:not(:disabled) { background: #15803d; }
+    .pending-options .po-btn.po-submit:disabled {
+      background: #1f2937;
+      border-color: #1f2937;
+      color: #6b7280;
+      cursor: not-allowed;
+    }
+    .pending-options .po-btn.po-select.po-selected {
+      background: #1e3a8a;
+      border-color: #60a5fa;
+      color: #fff;
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+    }
+    .pending-options .po-btn.po-select.po-selected::before {
+      content: '✓ ';
+      color: #60a5fa;
+      font-weight: bold;
+    }
+
     /* v0.6: msg 内部 markdown 渲染样式 */
     .msg.assistant p, .msg.system p { margin: 4px 0; }
     .msg.assistant strong, .msg.system strong { color: #fbbf24; }
@@ -1098,20 +1141,22 @@ function copySQL() {
   });
 }
 
-// v0.6: 通用 pending_options 渲染 (替代 showConfirmPanel)
+// v0.6.1: pending_options 渲染 (多选 + 提交)
+let selectedOptions = [];  // 当前已选项 (一组 [{question, value, label}])
 function renderPendingOptions(opts) {
   // 删旧 option 区
   const old = document.getElementById('pendingOptionsBox');
   if (old) old.remove();
+  selectedOptions = [];  // 每次重置
   if (!opts || !opts.length) return;
   const box = document.createElement('div');
   box.id = 'pendingOptionsBox';
   box.className = 'pending-options';
   const label = document.createElement('div');
   label.className = 'po-label';
-  label.textContent = '👇 点一个,或自己打字';
+  label.textContent = '👇 多选 (每个问题一个),完事点"提交"';
   box.appendChild(label);
-  // 按 question 分组 (clarifying 多问号)
+  // 按 question 分组
   const groups = {};
   const freeOpts = [];
   for (const o of opts) {
@@ -1123,7 +1168,6 @@ function renderPendingOptions(opts) {
       groups[q].push(o);
     }
   }
-  // 渲染 question 分组
   const qLabels = {
     time_range: '🕐 时间窗口',
     comparison: '📊 对比基准',
@@ -1144,14 +1188,32 @@ function renderPendingOptions(opts) {
     for (const o of items) {
       const b = document.createElement('button');
       b.className = 'po-btn po-select';
+      b.dataset.question = q;
+      b.dataset.value = o.value;
       b.textContent = o.label;
-      b.onclick = () => onOptionClick(o);
+      b.onclick = () => onOptionToggle(o, b);
       row.appendChild(b);
     }
     grp.appendChild(row);
     box.appendChild(grp);
   }
-  // 渲染 confirm / free (单行, 高亮)
+  // 底部: 已选提示 + 提交按钮 + confirm/free 按钮
+  const bottom = document.createElement('div');
+  bottom.className = 'po-bottom';
+  const selText = document.createElement('div');
+  selText.id = 'poSelText';
+  selText.className = 'po-sel-text';
+  selText.textContent = '已选 0 个';
+  bottom.appendChild(selText);
+  const submitBtn = document.createElement('button');
+  submitBtn.id = 'poSubmit';
+  submitBtn.className = 'po-btn po-submit';
+  submitBtn.textContent = '✅ 提交 (0)';
+  submitBtn.disabled = true;
+  submitBtn.onclick = submitOptions;
+  bottom.appendChild(submitBtn);
+  box.appendChild(bottom);
+  // free / confirm / edit 单行 (在底部之外, 不进选择池)
   if (freeOpts.length) {
     const row = document.createElement('div');
     row.className = 'po-buttons po-free-row';
@@ -1168,21 +1230,79 @@ function renderPendingOptions(opts) {
   box.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 
-function onOptionClick(o) {
-  // 删掉 button 列表 (避免重复点)
+function onOptionToggle(o, btnEl) {
+  // 多选模式: 同 question 限 1 个, 切换选中态
+  const q = o.question;
+  // 找同 question 其它 button, 取消选中
+  const box = document.getElementById('pendingOptionsBox');
+  box.querySelectorAll(`.po-btn[data-question="${q}"]`).forEach(b => {
+    if (b !== btnEl) b.classList.remove('po-selected');
+  });
+  if (btnEl.classList.contains('po-selected')) {
+    // 取消
+    btnEl.classList.remove('po-selected');
+    selectedOptions = selectedOptions.filter(s => s.question !== q);
+  } else {
+    // 选中
+    btnEl.classList.add('po-selected');
+    selectedOptions = selectedOptions.filter(s => s.question !== q);
+    selectedOptions.push({ question: q, value: o.value, label: o.label });
+  }
+  // 更新底部提示
+  const n = selectedOptions.length;
+  document.getElementById('poSelText').textContent = n ? `已选 ${n} 个: ${selectedOptions.map(s => s.label).join(' / ')}` : '已选 0 个';
+  const submitBtn = document.getElementById('poSubmit');
+  submitBtn.disabled = (n === 0);
+  submitBtn.textContent = n ? `✅ 提交 (${n})` : '✅ 提交 (0)';
+}
+
+function submitOptions() {
+  if (!selectedOptions.length) return;
+  // 拼成一条 message (e.g. "时间: 30天 / 口径: 不含退单 / 维度: 按品类")
+  const qLabels = {
+    time_range: '时间',
+    comparison: '对比',
+    metric_definition: '口径',
+    segmentation: '分层',
+    dimensions: '维度',
+    filters: '过滤',
+  };
+  const parts = selectedOptions.map(s => `${qLabels[s.question] || s.question}: ${s.value}`);
+  const msg = parts.join('; ');
+  // 显示 user 消息 (合并显示)
+  const userDisplay = selectedOptions.map(s => s.label).join(' + ');
+  // 删掉 button box
   const old = document.getElementById('pendingOptionsBox');
   if (old) old.remove();
-  if (o.kind === 'free_input' || o.value === null) {
-    // 聚焦输入框
+  addMessage('user', userDisplay);
+  send(msg);
+}
+
+function onOptionClick(o) {
+  // 单击类 (free_input / confirm / edit): 不进选择池, 立即生效
+  const old = document.getElementById('pendingOptionsBox');
+  if (old) old.remove();
+  selectedOptions = [];
+  if (o.kind === 'free_input' || (o.value === null && o.kind !== 'confirm' && o.kind !== 'edit')) {
+    // 自由回答: 聚焦输入框
     const input = document.getElementById('userInput');
     input.value = '';
     input.placeholder = o.kind === 'edit' ? '请告诉我你想改哪条:' : '自由回答...';
     input.focus();
     return;
   }
-  // 直接发
-  addMessage('user', o.label);
-  send(o.value);
+  if (o.kind === 'edit' || (o.value === null && o.kind === 'edit')) {
+    const input = document.getElementById('userInput');
+    input.value = '';
+    input.placeholder = '请告诉我你想改哪条:';
+    input.focus();
+    return;
+  }
+  // confirm / 直接 value 非 null: 立即发
+  if (o.value !== null) {
+    addMessage('user', o.label);
+    send(o.value);
+  }
 }
 
 function addMessage(role, content) {
