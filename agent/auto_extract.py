@@ -137,7 +137,9 @@ def _extract_insights_from_conclusion(
 
         insights.append({
             "category": category,
-            "title": f"{title_clean} [auto]",  # 标 [auto] 方便 UI 区分
+            # v0.6.13 治本: 加 session_id[:8] 后缀, 避免 UNIQUE(category, title) 触发 update
+            # (之前每次 LLM conclusion 段头一样, 全部 update 同一 record, KB 永远 5 条)
+            "title": f"{title_clean} [auto:{session_id[:8] if session_id else 'na'}]",
             "content": content_short,
             "source": f"auto_extract:conclude:{session_id}" if session_id else "auto_extract:conclude",
             "tags": tags,
