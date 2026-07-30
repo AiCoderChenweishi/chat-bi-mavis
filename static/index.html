@@ -596,6 +596,23 @@
       color: #60a5fa;
       font-weight: bold;
     }
+    .pending-options .po-group-done {
+      opacity: 1;
+      border-left: 3px solid #16a34a;
+      padding-left: 6px;
+      background: rgba(22, 163, 74, 0.05);
+    }
+    .pending-options .po-group:not(.po-group-done) {
+      opacity: 0.85;
+    }
+    .pending-options .po-btn.po-submit.po-submit-ready {
+      background: #16a34a;
+      animation: pulse-ready 1.5s infinite;
+    }
+    @keyframes pulse-ready {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+      50% { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
+    }
 
     /* v0.6: msg 内部 markdown 渲染样式 */
     .msg.assistant p, .msg.system p { margin: 4px 0; }
@@ -1154,7 +1171,10 @@ function renderPendingOptions(opts) {
   box.className = 'pending-options';
   const label = document.createElement('div');
   label.className = 'po-label';
-  label.textContent = '👇 多选 (每个问题一个),完事点"提交"';
+  // 进度 (已选 N/总, 总 = 必选槽位数, 必选 = 不要 free_input / confirm / edit)
+  const requiredCount = opts.filter(o => o.kind === 'select').length;
+  const groupCount = Object.keys(groups).length;
+  label.textContent = `👇 多选,每行选 1 个,选完点提交 · 还差 ${groupCount} 项`;
   box.appendChild(label);
   // 按 question 分组
   const groups = {};
@@ -1174,14 +1194,17 @@ function renderPendingOptions(opts) {
     metric_definition: '💰 指标口径',
     segmentation: '👥 用户分层',
     dimensions: '📂 拆解维度',
+    metrics: '📊 核心指标',
     filters: '🚫 过滤条件',
   };
   for (const [q, items] of Object.entries(groups)) {
     const grp = document.createElement('div');
     grp.className = 'po-group';
+    grp.dataset.question = q;
     const ql = document.createElement('div');
     ql.className = 'po-q-label';
     ql.textContent = qLabels[q] || q;
+    ql.dataset.q = q;
     grp.appendChild(ql);
     const row = document.createElement('div');
     row.className = 'po-buttons';
@@ -1203,12 +1226,12 @@ function renderPendingOptions(opts) {
   const selText = document.createElement('div');
   selText.id = 'poSelText';
   selText.className = 'po-sel-text';
-  selText.textContent = '已选 0 个';
+  selText.textContent = '已选 0 / ' + groupCount + ' 项';
   bottom.appendChild(selText);
   const submitBtn = document.createElement('button');
   submitBtn.id = 'poSubmit';
   submitBtn.className = 'po-btn po-submit';
-  submitBtn.textContent = '✅ 提交 (0)';
+  submitBtn.textContent = '✅ 提交 (0/' + groupCount + ')';
   submitBtn.disabled = true;
   submitBtn.onclick = submitOptions;
   bottom.appendChild(submitBtn);
@@ -1233,8 +1256,8 @@ function renderPendingOptions(opts) {
 function onOptionToggle(o, btnEl) {
   // 多选模式: 同 question 限 1 个, 切换选中态
   const q = o.question;
-  // 找同 question 其它 button, 取消选中
   const box = document.getElementById('pendingOptionsBox');
+  // 找同 question 其它 button, 取消选中
   box.querySelectorAll(`.po-btn[data-question="${q}"]`).forEach(b => {
     if (b !== btnEl) b.classList.remove('po-selected');
   });
@@ -1248,12 +1271,29 @@ function onOptionToggle(o, btnEl) {
     selectedOptions = selectedOptions.filter(s => s.question !== q);
     selectedOptions.push({ question: q, value: o.value, label: o.label });
   }
-  // 更新底部提示
+  // 统计: groupCount = 总 group, 已选 = 选中的 group 数
+  const totalGroups = box.querySelectorAll('.po-group').length;
   const n = selectedOptions.length;
-  document.getElementById('poSelText').textContent = n ? `已选 ${n} 个: ${selectedOptions.map(s => s.label).join(' / ')}` : '已选 0 个';
+  // 给选中的 group 整个高亮, 未选 group 半透明
+  const selQ = new Set(selectedOptions.map(s => s.question));
+  box.querySelectorAll('.po-group').forEach(g => {
+    if (selQ.has(g.dataset.question)) g.classList.add('po-group-done');
+    else g.classList.remove('po-group-done');
+  });
+  // 更新底部提示
+  const selText = document.getElementById('poSelText');
+  selText.textContent = n
+    ? `已选 ${n} / ${totalGroups} 项: ${selectedOptions.map(s => s.label).join(' / ')}`
+    : `已选 0 / ${totalGroups} 项`;
   const submitBtn = document.getElementById('poSubmit');
   submitBtn.disabled = (n === 0);
-  submitBtn.textContent = n ? `✅ 提交 (${n})` : '✅ 提交 (0)';
+  submitBtn.textContent = n ? `✅ 提交 (${n}/${totalGroups})` : `✅ 提交 (0/${totalGroups})`;
+  // 全部选完 → 自动聚焦提交按钮, 给视觉提示
+  if (n === totalGroups) {
+    submitBtn.classList.add('po-submit-ready');
+  } else {
+    submitBtn.classList.remove('po-submit-ready');
+  }
 }
 
 function submitOptions() {

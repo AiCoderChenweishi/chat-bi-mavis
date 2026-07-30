@@ -217,11 +217,18 @@ class RequirementClarifier:
                 spec.setdefault("user_confirmed", False)
                 spec.setdefault("is_mock_data", True)
         # v0.6: 计算 pending_options (UI 按钮列表)
-        result["pending_options"] = self._build_pending_options(
-            result.get("phase", "clarifying"),
-            result.get("open_questions", []),
-            result.get("spec"),
-        )
+        # v0.6.2 治本: 用 hardcoded 7-slot check 覆盖 LLM 返的 open_questions
+        # (LLM 老分轮问, user 体验灾难, 这里强制 7 槽位全列出)
+        spec = result.get("spec")
+        if result.get("phase") == "clarifying":
+            computed_slots = self._compute_open_slots(spec)
+            # 优先用 hardcoded (7 槽位全), 覆盖 LLM 返的 open_questions
+            result["open_questions"] = computed_slots
+            result["pending_options"] = self._build_pending_options("clarifying", computed_slots, spec)
+        elif result.get("phase") == "awaiting_confirmation":
+            result["pending_options"] = self._build_pending_options("awaiting_confirmation", [], spec)
+        else:
+            result["pending_options"] = []
         return result
 
     def _is_confirm(self, text: str) -> bool:
@@ -371,51 +378,87 @@ class RequirementClarifier:
             "is_mock_data": True,
         }
 
+    def _compute_open_slots(self, spec) -> list:
+        """
+        v0.6.2: 不信 LLM 决定问啥, hardcoded 7-slot 检查 spec 缺啥
+        返回: [slot_name, ...] 按 7 槽位固定顺序
+        """
+        if not spec or not isinstance(spec, dict):
+            # 初始没有任何 spec
+            return ["time_range", "metrics", "metric_definition", "dimensions", "comparison", "segmentation", "filters"]
+        open_slots = []
+        # 1. time_range: 必填, value 不能含 _assumption
+        tr = spec.get("time_range") or {}
+        if not tr or not tr.get("value") or tr.get("_assumption") or tr.get("value", "").endswith("d") is False and not tr.get("value", "").startswith("20"):
+            if not tr.get("value") or tr.get("_assumption"):
+                open_slots.append("time_range")
+        # 2. metrics: 必填
+        if not spec.get("metrics"):
+            open_slots.append("metrics")
+        # 3. metric_definition: 必填, 每个 metric 都要有 definition
+        mdef = spec.get("metric_definition") or {}
+        metrics = spec.get("metrics") or []
+        if not mdef or len(mdef) < len(metrics) or any(not v for v in mdef.values()):
+            open_slots.append("metric_definition")
+        # 4. dimensions: 没说就问
+        if not spec.get("dimensions"):
+            open_slots.append("dimensions")
+        # 5. comparison: 没说就问
+        if not spec.get("comparison"):
+            open_slots.append("comparison")
+        # 6. segmentation: 涉及"用户/新老客/渠道"才问
+        orig = (spec.get("original_query", "") or "").lower()
+        if any(kw in orig for kw in ["新客", "老客", "用户", "会员", "留存", "复购", "拉新", "激活", "客群"]):
+            if not spec.get("segmentation") or spec.get("segmentation") == "(未指定,默认全部)":
+                open_slots.append("segmentation")
+        # 7. filters: 默认空 (不强制问, 但要确认 user 不需要)
+        if "filters" not in spec:
+            open_slots.append("filters")
+        return open_slots
+
     def _build_pending_options(self, phase: str, open_questions: list, spec=None) -> list:
         """
-        v0.6: 给 server 返 pending_options, UI 直接渲染 button 列表
-        - clarifying: 每个 open_question 给 2-3 个最相关选项 + 1 自由输入
+        v0.6.2: 给 server 返 pending_options, UI 直接渲染 button 列表
+        - clarifying: 列齐 7 槽位里所有缺的, 每个 slot 给 2 个最相关 (7×2+1=15, 不刷屏)
         - awaiting_confirmation: [确认, 修改, 跳过] 3 个
         - ready: [] (无, user 应该已经确认)
         """
         opts = []
         if phase == "clarifying":
-            # 每个 open_question 给 3 个最相关选项 (避免 12 个刷屏)
+            # v0.6.2 治本: 列齐所有缺 (不只 3 个)
             option_map = {
                 "time_range": [
+                    ("📅 最近 30 天 (默认)", "30天"),
                     ("📅 最近 7 天", "7天"),
-                    ("📅 最近 30 天", "30天"),
-                    ("📅 最近 90 天", "90天"),
                 ],
-                "comparison": [
-                    ("📊 同比 (vs 去年)", "同比"),
-                    ("📊 环比 (vs 上期)", "环比"),
-                    ("📊 不对比 (裸值)", "不对比"),
+                "metrics": [
+                    ("📊 GMV (销售额)", "GMV"),
+                    ("📊 订单量", "订单量"),
                 ],
                 "metric_definition": [
-                    ("💰 含退单", "含退单"),
                     ("💰 不含退单 (默认)", "不含退单"),
-                    ("💰 不扣减 (毛 GMV)", "不扣减"),
-                ],
-                "segmentation": [
-                    ("👥 新客 (首单)", "新客按首单"),
-                    ("👥 老客 (历史下过单)", "老客"),
-                    ("👥 不分层 (全部)", "不分层"),
+                    ("💰 含退单", "含退单"),
                 ],
                 "dimensions": [
                     ("📂 按品类拆", "按品类"),
-                    ("📂 按渠道拆", "按渠道"),
-                    ("📂 不拆维度", "不拆维度"),
+                    ("📂 不拆维度 (汇总)", "不拆维度"),
+                ],
+                "comparison": [
+                    ("📈 同比 (vs 去年)", "同比"),
+                    ("📈 不对比 (裸趋势)", "不对比"),
+                ],
+                "segmentation": [
+                    ("👥 不分层 (全部)", "不分层"),
+                    ("👥 新客 (首单)", "新客按首单"),
                 ],
                 "filters": [
+                    ("🚫 不额外过滤 (默认)", "不过滤"),
                     ("🚫 排除测试", "排除测试"),
-                    ("🚫 不看 VIP", "不看VIP"),
-                    ("🚫 不额外过滤", "不过滤"),
                 ],
             }
             seen = set()
-            # 最多 3 个 question, 每个 question 给 3 个选项 (9 个 button, 跟 1 自由输入)
-            for q in (open_questions or [])[:3]:
+            # 一次列所有缺 (不限 3)
+            for q in (open_questions or []):
                 for label, val in option_map.get(q, []):
                     if val in seen:
                         continue
