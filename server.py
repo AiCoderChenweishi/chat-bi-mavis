@@ -134,13 +134,13 @@ def chat_get(session_id: str):
 
 def _phase_default_message(phase: str) -> str:
     return {
-        "warehouse_understanding": "正在理解数仓,选表定位中...",
-        "sql_generating": "正在生成 SQL...",
-        "executing": "正在执行查询...",
-        "visualizing": "正在生成图表...",
-        "writing_conclusion": "正在撰写分析结论...",
-        "done": "分析完成",
-        "error": "出错了",
+        "warehouse_understanding": "🗂️ 正在理解数仓结构,选表定位中...",
+        "sql_generating": "⚙️ 正在生成 SQL 查询...",
+        "executing": "📊 正在执行查询...",
+        "visualizing": "📈 正在生成图表...",
+        "writing_conclusion": "💡 正在撰写分析结论...",
+        "done": "✅ 分析完成",
+        "error": "❌ 出错了",
     }.get(phase, phase)
 
 
@@ -170,34 +170,43 @@ async def _stream_chat(session_id: str, message: str, is_new: bool):
         # 如果本轮停在 clarifying / awaiting_confirmation, 直接发 done (不跑后续)
         if st.phase in ("clarifying", "awaiting_confirmation", "done", "error"):
             reply = st.assistant_message or _phase_default_message(st.phase)
-            # 打字机效果: 3 字符/65ms ≈ 46 字符/秒 (中文友好, 像真人快读)
+            # 打字机效果: 1 字符/50ms = 20 字符/秒
             for i in range(0, len(reply), 1):
                 yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+1]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.12)
+                await asyncio.sleep(0.05)
             yield f"data: {json.dumps({'event':'done','state':st.to_public_dict(),'reply':reply,'pending_options':st.pending_options or [],'phase':st.phase}, ensure_ascii=False)}\n\n"
             return
         # 否则一路 run_through, 阶段切换时打字机流
-        yield f"data: {json.dumps({'event':'phase','phase':st.phase})}\n\n"
+        # v0.6.11 治本: 流式分 3 段 (上一阶段打字机 → step 阻塞 → 新阶段打字机)
+        # 让 user 看到每阶段都有进展, 不会觉得 "卡了"
         prev_phase = st.phase
-        # 打 assistant 初始 reply (如果有)
+        # 先打 assistant 初始 reply (如果有)
         if st.assistant_message:
             reply = st.assistant_message
             for i in range(0, len(reply), 1):
                 yield f"data: {json.dumps({'event':'chunk','delta': reply[i:i+1]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.12)
+                await asyncio.sleep(0.05)  # 1 字符/50ms = 20 字符/秒
         # 跑后续阶段
         max_phases = 6
         while st.phase not in ("clarifying", "awaiting_confirmation", "done", "error") and max_phases > 0:
-            await asyncio.to_thread(workflow.step, st.session_id)
-            if st.phase != prev_phase:
-                yield f"data: {json.dumps({'event':'phase','phase':st.phase})}\n\n"
-                prev_phase = st.phase
-            # 每个阶段打字机 (短消息, 3 字符/65ms)
+            # 1. yield 上一阶段打字机 (user 看到 "🗂️ 正在理解数仓...")
             phase_msg = _phase_default_message(st.phase)
             for i in range(0, len(phase_msg), 1):
                 yield f"data: {json.dumps({'event':'chunk','delta': phase_msg[i:i+1]}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.12)
+                await asyncio.sleep(0.05)
+            # 2. step 阻塞 (LLM call / DuckDB / ECharts)
+            await asyncio.to_thread(workflow.step, st.session_id)
+            # 3. 检查 phase 切换, yield phase event
+            if st.phase != prev_phase:
+                yield f"data: {json.dumps({'event':'phase','phase':st.phase})}\n\n"
+                prev_phase = st.phase
             max_phases -= 1
+        # 跑完所有阶段, 最终打字机走 done 状态
+        final_msg = _phase_default_message(st.phase) if st.phase == "done" else ""
+        if final_msg:
+            for i in range(0, len(final_msg), 1):
+                yield f"data: {json.dumps({'event':'chunk','delta': final_msg[i:i+1]}, ensure_ascii=False)}\n\n"
+                await asyncio.sleep(0.05)
         # 跑完, 推送最终 state
         reply_final = st.assistant_message or _phase_default_message(st.phase)
         yield f"data: {json.dumps({'event':'done','state':st.to_public_dict(),'reply':reply_final,'pending_options':st.pending_options or [],'phase':st.phase}, ensure_ascii=False)}\n\n"

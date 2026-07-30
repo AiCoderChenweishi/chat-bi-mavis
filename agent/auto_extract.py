@@ -60,9 +60,14 @@ def _extract_insights_from_conclusion(
 
     insights: List[Dict[str, Any]] = []
     spec = spec or {}
-    spec_metrics = [m.get("name", "") for m in spec.get("metrics", []) if m.get("name")]
-    spec_dimensions = [d.get("name", "") for d in spec.get("dimensions", []) if d.get("name")]
-    spec_filters = [f.get("name", "") for f in spec.get("filters", []) if f.get("name")]
+    # v0.6.11 治本: dimensions/filters 可能是 list of str (e.g. "category_l1")
+    # 之前 .get("name") 报 'str has no attribute 'get'', added=0
+    def _name(x):
+        if isinstance(x, dict): return x.get("name", "") or x.get("value", "")
+        return str(x) if x else ""
+    spec_metrics = [_name(m) for m in spec.get("metrics", []) if _name(m)]
+    spec_dimensions = [_name(d) for d in spec.get("dimensions", []) if _name(d)]
+    spec_filters = [_name(f) for f in spec.get("filters", []) if _name(f)]
 
     for sec in sections[:5]:  # 最多 5 段
         sec = sec.strip()
