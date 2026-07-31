@@ -687,46 +687,62 @@
       background: #0f172a; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px;
     }
 
+    /* v0.6.20 提问框: Tailwind 风, 大圆角, 居中, 内嵌 icon button */
     .chat-input-area {
-      padding: 12px;
+      padding: 12px 14px 14px 14px;
       background: var(--bg-elev);
       border-top: 1px solid var(--border);
-      display: flex;
-      gap: 8px;
     }
-    .chat-input-area input {
-      flex: 1;
-      padding: 8px 12px;
+    .chat-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       background: var(--bg);
-      color: var(--text);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: 12px;
+      padding: 4px 4px 4px 14px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .chat-input-wrap:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    .chat-input-wrap input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      padding: 8px 0;
       outline: none;
-      transition: border-color 0.15s;
       font-family: inherit;
     }
-    .chat-input-area input:focus {
-      border-color: var(--primary);
-    }
-    .chat-input-area input::placeholder { color: var(--text-faint); }
-    .chat-input-area button {
-      padding: 8px 16px;
+    .chat-input-wrap input::placeholder { color: var(--text-faint); }
+    .chat-input-wrap button {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
       background: var(--primary);
       color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background 0.15s;
-      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s, transform 0.1s;
     }
-    .chat-input-area button:hover { background: var(--primary-hover); }
-    .chat-input-area button:disabled {
+    .chat-input-wrap button:hover { background: var(--primary-hover); }
+    .chat-input-wrap button:active { transform: scale(0.95); }
+    .chat-input-wrap button:disabled {
       background: var(--bg-elev-2);
       color: var(--text-faint);
       cursor: not-allowed;
+    }
+    .chat-input-wrap button svg {
+      width: 14px;
+      height: 14px;
     }
 
     /* 阶段指示器 */
@@ -1152,8 +1168,15 @@
       </div>
     </div>
     <div class="chat-input-area">
-      <input id="userInput" placeholder="输入你的需求 / 回答追问..." autofocus>
-      <button id="sendBtn" onclick="send()">发送</button>
+      <div class="chat-input-wrap">
+        <input id="userInput" placeholder="问点什么... 例如'最近 30 天 GMV 怎么样'" autocomplete="off" autofocus>
+        <button id="sendBtn" onclick="send()" aria-label="发送">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
 
